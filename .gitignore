@@ -8,3 +8,5 @@ app/build/
 .env
 *.hprof
 .build-outputs/
+*.keystore
+*.keystore.base64
