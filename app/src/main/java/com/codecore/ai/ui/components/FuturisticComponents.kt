@@ -1,12 +1,11 @@
 package com.codecore.ai.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -14,10 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.codecore.ai.R
 import com.codecore.ai.ui.theme.*
 
 @Composable
@@ -85,32 +85,14 @@ fun CodeCoreLogo(modifier: Modifier = Modifier) {
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.codecore_logo),
+            contentDescription = "CodeCore AI Logo",
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(PrimaryViolet, Lavender, SubtleGlow)
-                    )
-                )
-                .padding(1.5.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(SurfaceDark),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Build,
-                    contentDescription = "CodeCore Nexus Emblem",
-                    tint = BrightViolet,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, BorderGlow, RoundedCornerShape(10.dp))
+        )
         Spacer(modifier = Modifier.width(10.dp))
         Column {
             Text(
@@ -121,7 +103,7 @@ fun CodeCoreLogo(modifier: Modifier = Modifier) {
                 letterSpacing = 1.2.sp
             )
             Text(
-                text = "Autonomous Mobile IDE v0.1",
+                text = "Автономная мобильная IDE v0.1",
                 style = MaterialTheme.typography.labelSmall,
                 color = BrightViolet,
                 fontSize = 10.sp

@@ -1,42 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">CodeCore AI</string>
-    <string name="nav_dashboard">Dashboard</string>
-    <string name="nav_workspace">Workspace</string>
-    <string name="nav_models">AI Models</string>
-    <string name="nav_learning">Learning</string>
-    <string name="nav_github">GitHub</string>
-    <string name="nav_diagnostics">Diagnostics</string>
 
-    <string name="status_local_ai">Local AI Engine</string>
-    <string name="status_model_loaded">Model Loaded</string>
-    <string name="status_model_none">No Model Loaded</string>
-    <string name="status_github_connected">GitHub Connected</string>
-    <string name="status_github_disconnected">GitHub Offline</string>
-    <string name="status_hybrid_mode">Hybrid Mode</string>
-    <string name="status_offline_mode">Autonomous Offline</string>
+    <!-- Навигация -->
+    <string name="nav_dashboard">Главная</string>
+    <string name="nav_workspace">Редактор</string>
+    <string name="nav_models">Модели AI</string>
+    <string name="nav_training">Обучение</string>
+    <string name="nav_github">GitHub CI</string>
+    <string name="nav_diagnostics">Диагностика</string>
 
-    <string name="prompt_placeholder">Describe your Android application or feature to generate with CodeCore AI…</string>
-    <string name="btn_generate">Generate with Local AI</string>
-    <string name="btn_new_project">New Project</string>
-    <string name="recent_projects">Recent Projects</string>
-    <string name="no_projects_yet">No projects created yet. Start by typing a prompt above!</string>
+    <!-- Статусы движка и моделей -->
+    <string name="status_engine_title">ЛОКАЛЬНЫЙ ДВИЖОК</string>
+    <string name="status_model_not_installed">Модель не установлена</string>
+    <string name="status_model_downloading">Скачивание модели…</string>
+    <string name="status_model_installed">Установлена на диске</string>
+    <string name="status_model_loading_ram">Загрузка в RAM…</string>
+    <string name="status_model_ready">Готов к генерации</string>
+    <string name="status_model_error">Ошибка инициализации</string>
+    <string name="status_model_low_ram">Недостаточно RAM</string>
 
-    <string name="title_workspace">Project Workspace</string>
-    <string name="title_models">Model Manager</string>
-    <string name="title_learning">CodeCore Learning</string>
-    <string name="title_github">GitHub &amp; CI/CD</string>
-    <string name="title_diagnostics">Project Diagnostics</string>
+    <!-- Режимы работы AI -->
+    <string name="mode_local_title">Режим A: Только Local AI</string>
+    <string name="mode_local_subtitle">100% автономно, без интернета, запросы в облако отключены</string>
+    <string name="mode_local_badge">АВТОНОМНЫЙ</string>
 
-    <string name="model_15b_title">CodeCore Light 1.5B (GGUF)</string>
-    <string name="model_3b_title">CodeCore Architect 3B (GGUF)</string>
-    <string name="btn_download">Download GGUF</string>
-    <string name="btn_load_model">Load into RAM</string>
-    <string name="btn_unload_model">Unload Model</string>
-    <string name="btn_delete_model">Delete Model</string>
-    <string name="btn_stop_generation">Stop Generation</string>
-    <string name="btn_resume_generation">Resume Generation</string>
+    <string name="mode_hybrid_title">Режим B: Local AI + Gemini</string>
+    <string name="mode_hybrid_subtitle">Локальная модель — разработчик, Gemini — облачный консультант</string>
+    <string name="mode_hybrid_badge">ГИБРИД</string>
 
-    <string name="gemini_teacher_title">Google Gemini (Cloud Teacher)</string>
-    <string name="github_actions_workflow">GitHub Actions Remote Build</string>
+    <string name="mode_cloud_title">Режим C: Только Cloud AI</string>
+    <string name="mode_cloud_subtitle">Быстрая генерация напрямую через облачный интеллект</string>
+    <string name="mode_cloud_badge">ОБЛАКО</string>
+
+    <!-- Главный экран -->
+    <string name="dashboard_title">CODECORE AI</string>
+    <string name="dashboard_subtitle">Автономная мобильная IDE v0.1</string>
+    <string name="generator_card_title">АВТОНОМНЫЙ ГЕНЕРАТОР ПРОЕКТОВ</string>
+    <string name="prompt_placeholder">Опишите приложение подробно (например: Android-видеоплеер с поддержкой MP4/MKV, плейлистами, управлением жестами и тёмной темой)…</string>
+    <string name="btn_generate">Создать проект через Local AI</string>
+    <string name="btn_stop_generation">Остановить генерацию</string>
+    <string name="recent_projects_title">НЕДАВНИЕ ПРОЕКТЫ</string>
+    <string name="no_model_warning">Для генерации необходимо скачать и загрузить модель в разделе «Модели AI».</string>
+
+    <!-- Раздел Модели AI -->
+    <string name="models_screen_title">КАТАЛОГ GGUF-МОДЕЛЕЙ</string>
+    <string name="models_screen_subtitle">Локальные модели для программирования и работы с кодом</string>
+    <string name="ram_status_title">СОСТОЯНИЕ ОПЕРАТИВНОЙ ПАМЯТИ</string>
+    <string name="btn_download_model">Скачать GGUF</string>
+    <string name="btn_load_ram">Загрузить в RAM</string>
+    <string name="btn_unload_ram">Выгрузить из RAM</string>
+    <string name="btn_delete_model">Удалить файл</string>
+    <string name="btn_pause_download">Пауза</string>
+    <string name="btn_resume_download">Продолжить</string>
+    <string name="btn_cancel_download">Отмена</string>
+
+    <!-- Раздел Обучение -->
+    <string name="training_title">ОБУЧЕНИЕ МОДЕЛЕЙ</string>
+    <string name="training_subtitle">Дообучение через LoRA / QLoRA на удалённых GPU в Google Colab</string>
+    <string name="btn_open_colab">Обучить модель в Google</string>
+    <string name="btn_export_dataset">Экспорт датасета (.jsonl)</string>
+
+    <!-- Раздел GitHub -->
+    <string name="github_title">ИНТЕГРАЦИЯ GITHUB И CI/CD</string>
+    <string name="github_subtitle">Удалённая компиляция APK через GitHub Actions</string>
+    <string name="workflow_status_active">Workflow настроен и готов к сборке APK</string>
+
+    <!-- Диагностика -->
+    <string name="diagnostics_title">ДИАГНОСТИКА СИСТЕМЫ</string>
+    <string name="diagnostics_subtitle">Автоматическая проверка целостности компонентов</string>
+    <string name="btn_run_diagnostics">Запустить проверку</string>
 </resources>

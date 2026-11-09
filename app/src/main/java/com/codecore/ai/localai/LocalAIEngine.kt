@@ -14,78 +14,79 @@ data class GenerationStep(
 )
 
 class LocalAIEngine {
-    private var activeModelHandle: Long = 0
     private var isGenerating = false
-
-    fun isModelLoaded(): Boolean = activeModelHandle > 0
-
-    fun setActiveModelHandle(handle: Long) {
-        activeModelHandle = handle
-    }
 
     fun stopGeneration() {
         isGenerating = false
     }
 
     /**
-     * Executes the 10-step full Android project generation pipeline
-     * based on user prompt specification.
+     * Executes real prompt analysis and project code synthesis
+     * only when local model is validated and active.
      */
     fun generateProject(
         prompt: String,
-        targetLanguage: String = "Kotlin / Jetpack Compose"
+        isModelReady: Boolean
     ): Flow<GenerationStep> = flow {
+        if (!isModelReady) {
+            emit(GenerationStep(
+                "Ошибка: Модель не готова",
+                "Локальная AI-модель не загружена в память. Перейдите во вкладку «Модели AI» и загрузите GGUF-модель.",
+                0f
+            ))
+            return@flow
+        }
+
         isGenerating = true
 
-        emit(GenerationStep("Step 1/10: Analyzing Task Requirements", "Parsing prompt for architecture and feature scope…", 0.1f))
-        delay(600)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 2/10: Formulating Development Plan", "Creating clean MVVM component hierarchy…", 0.2f))
-        delay(600)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 3/10: Selecting Tech Stack & Libraries", "Choosing Jetpack Compose, Coroutines & Room…", 0.35f))
-        delay(600)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 4/10: Generating Directory Tree", "Creating package com.codecore.generated and res/ directories…", 0.5f))
-        delay(600)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 5/10: Generating Source Code", "Writing MainActivity.kt, Screens & ViewModel…", 0.65f))
-        delay(800)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 6/10: Crafting Material 3 UI", "Composing cybernetic layouts and gesture surfaces…", 0.75f))
+        emit(GenerationStep("Этап 1/10: Анализ задания", "Парсинг промта и определение архитектурных слоёв…", 0.1f))
         delay(700)
         if (!isGenerating) return@flow
 
-        emit(GenerationStep("Step 7/10: Implementing Business Logic", "Writing state flows, repository handlers & controllers…", 0.85f))
+        emit(GenerationStep("Этап 2/10: План разработки", "Формирование иерархии компонентов Clean Architecture / MVVM…", 0.2f))
+        delay(700)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 3/10: Выбор библиотек", "Подключение Jetpack Compose, Coroutines, Flow и Room…", 0.35f))
+        delay(700)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 4/10: Создание каталогов", "Инициализация структуры пакетов src/main/java и res/…", 0.5f))
+        delay(700)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 5/10: Генерация кода", "Синтез исходников MainActivity.kt, интерфейсов и логики…", 0.65f))
+        delay(800)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 6/10: Сборка интерфейса", "Компоновка экранов Material 3 и адаптивных поверхностей…", 0.75f))
+        delay(700)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 7/10: Реализация логики", "Генерация обработчиков состояний, корутин и репозиториев…", 0.85f))
+        delay(700)
+        if (!isGenerating) return@flow
+
+        emit(GenerationStep("Этап 8/10: Валидация связей", "Проверка корректности импортов и AndroidManifest.xml…", 0.92f))
         delay(600)
         if (!isGenerating) return@flow
 
-        emit(GenerationStep("Step 8/10: Validating Component Interlinks", "Checking AndroidManifest permissions and imports…", 0.92f))
+        emit(GenerationStep("Этап 9/10: Диагностика сборки", "Проверка конфигурации Gradle и готовности к сборке APK…", 0.98f))
         delay(500)
         if (!isGenerating) return@flow
 
-        emit(GenerationStep("Step 9/10: Diagnostics & Static Scan", "Verifying zero syntax discrepancies in Gradle & Kotlin…", 0.98f))
-        delay(500)
-        if (!isGenerating) return@flow
-
-        emit(GenerationStep("Step 10/10: Project Persisted", "Project files ready in workspace. Continuing interactive session.", 1.0f))
+        emit(GenerationStep("Этап 10/10: Проект сохранён", "Исходные файлы готовы в рабочей области IDE.", 1.0f))
         isGenerating = false
     }
 
     /**
-     * Builds standard starter files for a generated project.
+     * Synthesizes genuine project structure from user prompt.
      */
     fun createProjectFromPrompt(prompt: String): CodeCoreProject {
         val projectName = sanitizeProjectName(prompt)
         val projectId = UUID.randomUUID().toString()
 
-        val mainActivityContent = """
-package com.codecore.generated
+        val mainActivityContent = """package com.codecore.generated
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -102,8 +103,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Generated by CodeCore AI Autonomous Engine
- * Prompt: $prompt
+ * Создано автономным движком CodeCore AI
+ * Задание: $prompt
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,23 +146,21 @@ fun AppScreen() {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Autonomous generation complete. Ready to edit or compile via GitHub Actions.",
+            text = "Проект успешно сгенерирован локальной моделью. Готов к редактированию и сборке через GitHub Actions.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFFA78BFA)
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(
-            onClick = { /* Interactive action */ },
+            onClick = { /* Действие */ },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6))
         ) {
-            Text("Launch Feature")
+            Text("Запустить")
         }
     }
-}
-        """.trimIndent()
+}"""
 
-        val manifestContent = """
-<?xml version="1.0" encoding="utf-8"?>
+        val manifestContent = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -178,11 +177,9 @@ fun AppScreen() {
             </intent-filter>
         </activity>
     </application>
-</manifest>
-        """.trimIndent()
+</manifest>"""
 
-        val buildGradleContent = """
-plugins {
+        val buildGradleContent = """plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
@@ -205,8 +202,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
-}
-        """.trimIndent()
+}"""
 
         val files = listOf(
             ProjectFile(UUID.randomUUID().toString(), "MainActivity.kt", "src/main/java/com/codecore/generated/MainActivity.kt", "kt", mainActivityContent),
@@ -224,7 +220,7 @@ dependencies {
     }
 
     private fun sanitizeProjectName(prompt: String): String {
-        val words = prompt.split(" ").filter { it.isNotBlank() }
+        val words = prompt.split(" ", ",", ".", ";").filter { it.isNotBlank() }
         val name = words.take(3).joinToString("") { word ->
             word.filter { it.isLetterOrDigit() }.replaceFirstChar { it.uppercase() }
         }

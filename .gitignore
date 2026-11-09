@@ -10,3 +10,4 @@ app/build/
 .build-outputs/
 *.keystore
 *.keystore.base64
+public/
