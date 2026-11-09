@@ -2,38 +2,35 @@ package com.codecore.ai.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Futuristic Deep Graphite & Black Palette
-val Graphite950 = Color(0xFF090A0C)
-val Graphite900 = Color(0xFF0E1014)
-val Graphite850 = Color(0xFF14171D)
-val Graphite800 = Color(0xFF1B1E26)
-val Graphite700 = Color(0xFF262A35)
-val Graphite600 = Color(0xFF383D4C)
+// Futuristic Violet-Purple & Deep Obsidian Palette
+val BackgroundDark = Color(0xFF0B0A12)
+val SurfaceDark = Color(0xFF151321)
+val SurfaceElevated = Color(0xFF1D192E)
+val SurfaceGlass = Color(0xCC151321)
+val SurfaceCard = Color(0xFF181528)
 
-// Primary Accent: High-Tech Orange & Laser Glow
-val OrangePrimary = Color(0xFFFF6D00)
-val OrangeLight = Color(0xFFFF9100)
-val OrangeDark = Color(0xFFD84315)
-val OrangeGlow = Color(0x33FF6D00)
+// Violet & Lavender Accents
+val PrimaryViolet = Color(0xFF8B5CF6)
+val BrightViolet = Color(0xFFA78BFA)
+val Lavender = Color(0xFFC4B5FD)
+val LavenderLight = Color(0xFFDDD6FE)
+val SubtleGlow = Color(0xFF7C3AED)
+val DeepViolet = Color(0xFF5B21B6)
 
-// Secondary Accent: Amber & Cyber Gold
-val AmberSecondary = Color(0xFFFFB300)
-val AmberLight = Color(0xFFFFCA28)
-val AmberDark = Color(0xFFFF8F00)
+// Borders & Strokes
+val BorderSubtle = Color(0xFF2E2A4A)
+val BorderGlow = Color(0x807C3AED)
+val BorderBright = Color(0xB3A78BFA)
 
-// Status & Diagnostics
-val SuccessGreen = Color(0xFF00E676)
-val SuccessGreenGlow = Color(0x3300E676)
-val WarningYellow = Color(0xFFFFD600)
-val ErrorRed = Color(0xFFFF3D00)
-val ErrorRedGlow = Color(0x33FF3D00)
-val InfoCyan = Color(0xFF00E5FF)
+// Typography Colors
+val TextPrimary = Color(0xFFF5F3FF)
+val TextSecondary = Color(0xFFA78BFA)
+val TextMuted = Color(0xFF71717A)
 
-// Surface & Text
-val TextPrimary = Color(0xFFF5F6FA)
-val TextSecondary = Color(0xFFA0A5B8)
-val TextMuted = Color(0xFF6C7284)
-val SurfaceCard = Color(0xFF161920)
-val SurfaceCardElevated = Color(0xFF1E222B)
-val BorderSubtle = Color(0xFF2B303D)
-val BorderAccent = Color(0x66FF6D00)
+// Status & Diagnostics (Pure cool tones, no warm orange/yellow)
+val StatusGreen = Color(0xFF10B981)
+val StatusGreenGlow = Color(0x3310B981)
+val StatusCyan = Color(0xFF38BDF8)
+val StatusRed = Color(0xFFEF4444)
+val StatusRedGlow = Color(0x33EF4444)
+val StatusViolet = Color(0xFF8B5CF6)
