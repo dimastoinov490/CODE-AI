@@ -7,6 +7,8 @@ android {
     namespace = "com.codecore.ai"
     compileSdk = 36
 
+    ndkVersion = "26.1.10909125"
+
     defaultConfig {
         applicationId = "com.codecore.ai"
         minSdk = 26
@@ -15,6 +17,24 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags("-O3")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

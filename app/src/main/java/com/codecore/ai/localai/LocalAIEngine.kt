@@ -1,229 +1,293 @@
 package com.codecore.ai.localai
 
-import com.codecore.ai.model.CodeCoreProject
+import android.util.Log
 import com.codecore.ai.model.ProjectFile
-import kotlinx.coroutines.delay
+import com.codecore.ai.project.ProjectFileParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import java.util.UUID
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class GenerationStep(
     val title: String,
     val detail: String,
-    val progress: Float
+    val progress: Float,
+    val streamingToken: String? = null,
+    val accumulatedText: String? = null,
+    val isCancelled: Boolean = false,
+    val isFailed: Boolean = false
 )
 
 class LocalAIEngine {
-    private var isGenerating = false
+    private val TAG = "LocalAIEngine"
+    private val isCancelled = AtomicBoolean(false)
 
     fun stopGeneration() {
-        isGenerating = false
+        Log.i(TAG, "Requesting immediate generation stop")
+        isCancelled.set(true)
     }
 
     /**
-     * Executes real prompt analysis and project code synthesis
-     * only when local model is validated and active.
+     * Executes real multi-step autonomous Android code generation using llama.cpp via LlamaBridge.
      */
-    fun generateProject(
+    fun generateProjectStream(
+        handle: Long,
         prompt: String,
-        isModelReady: Boolean
+        temperature: Float = 0.6f,
+        topP: Float = 0.9f,
+        topK: Int = 40,
+        repeatPenalty: Float = 1.1f
     ): Flow<GenerationStep> = flow {
-        if (!isModelReady) {
-            emit(GenerationStep(
-                "Ошибка: Модель не готова",
-                "Локальная AI-модель не загружена в память. Перейдите во вкладку «Модели AI» и загрузите GGUF-модель.",
-                0f
-            ))
+        if (handle <= 0L || !LlamaBridge.isNativeReady()) {
+            emit(
+                GenerationStep(
+                    title = "Ошибка: AI модель не готова",
+                    detail = "Локальная GGUF-модель не загружена в память. Перейдите во вкладку «Модели AI» и загрузите модель.",
+                    progress = 0f,
+                    isFailed = true
+                )
+            )
             return@flow
         }
 
-        isGenerating = true
+        isCancelled.set(false)
 
-        emit(GenerationStep("Этап 1/10: Анализ задания", "Парсинг промта и определение архитектурных слоёв…", 0.1f))
-        delay(700)
-        if (!isGenerating) return@flow
+        // ----------------------------------------------------
+        // Step 1: Multi-step agent - Architectural Plan
+        // ----------------------------------------------------
+        emit(GenerationStep("Этап 1/3: Архитектурный план", "Анализ задания и построение структуры файлов…", 0.1f))
 
-        emit(GenerationStep("Этап 2/10: План разработки", "Формирование иерархии компонентов Clean Architecture / MVVM…", 0.2f))
-        delay(700)
-        if (!isGenerating) return@flow
+        val planSystemPrompt = """<|im_start|>system
+Ты — автономный senior Android-архитектор. Сформируй список из 2-4 необходимых файлов для реализации приложения на Kotlin и Jetpack Compose (Material 3).
+Пакет приложения: com.codecore.generated.
+Перечисли файлы по одному на строку в формате:
+File:app/src/main/java/com/codecore/generated/ИмяФайла.kt - краткое назначение
+Не пиши лишнего текста.<|im_end|>
+<|im_start|>user
+Задание: $prompt<|im_end|>
+<|im_start|>assistant
+"""
 
-        emit(GenerationStep("Этап 3/10: Выбор библиотек", "Подключение Jetpack Compose, Coroutines, Flow и Room…", 0.35f))
-        delay(700)
-        if (!isGenerating) return@flow
+        val planOutput = StringBuilder()
+        try {
+            LlamaBridge.generate(
+                handle = handle,
+                prompt = planSystemPrompt,
+                temperature = temperature,
+                topP = topP,
+                topK = topK,
+                repeatPenalty = repeatPenalty,
+                maxTokens = 350
+            ) { token ->
+                if (isCancelled.get()) return@generate false
+                planOutput.append(token)
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating plan", e)
+        }
 
-        emit(GenerationStep("Этап 4/10: Создание каталогов", "Инициализация структуры пакетов src/main/java и res/…", 0.5f))
-        delay(700)
-        if (!isGenerating) return@flow
+        if (isCancelled.get()) {
+            emit(GenerationStep("Генерация отменена", "Операция остановлена пользователем", 0f, isCancelled = true))
+            return@flow
+        }
 
-        emit(GenerationStep("Этап 5/10: Генерация кода", "Синтез исходников MainActivity.kt, интерфейсов и логики…", 0.65f))
-        delay(800)
-        if (!isGenerating) return@flow
+        val planText = planOutput.toString().trim()
+        val plannedFiles = extractPlannedFilePaths(planText)
+        val filesToGenerate = if (plannedFiles.isNotEmpty()) plannedFiles else listOf(
+            "app/src/main/java/com/codecore/generated/MainActivity.kt",
+            "app/src/main/java/com/codecore/generated/ui/AppScreen.kt"
+        )
 
-        emit(GenerationStep("Этап 6/10: Сборка интерфейса", "Компоновка экранов Material 3 и адаптивных поверхностей…", 0.75f))
-        delay(700)
-        if (!isGenerating) return@flow
+        emit(GenerationStep("Этап 2/3: Генерация файлов", "План сформирован (${filesToGenerate.size} файлов). Начинается синтез кода…", 0.3f))
 
-        emit(GenerationStep("Этап 7/10: Реализация логики", "Генерация обработчиков состояний, корутин и репозиториев…", 0.85f))
-        delay(700)
-        if (!isGenerating) return@flow
+        // ----------------------------------------------------
+        // Step 2: Multi-step agent - File by file synthesis
+        // ----------------------------------------------------
+        val generatedProjectFiles = mutableListOf<ProjectFile>()
+        val totalFiles = filesToGenerate.size
 
-        emit(GenerationStep("Этап 8/10: Валидация связей", "Проверка корректности импортов и AndroidManifest.xml…", 0.92f))
-        delay(600)
-        if (!isGenerating) return@flow
+        for ((index, filePath) in filesToGenerate.withIndex()) {
+            if (isCancelled.get()) {
+                emit(GenerationStep("Генерация отменена", "Операция остановлена пользователем", 0f, isCancelled = true))
+                return@flow
+            }
 
-        emit(GenerationStep("Этап 9/10: Диагностика сборки", "Проверка конфигурации Gradle и готовности к сборке APK…", 0.98f))
-        delay(500)
-        if (!isGenerating) return@flow
+            val fileName = filePath.substringAfterLast("/")
+            val fileProgress = 0.3f + (index.toFloat() / totalFiles) * 0.6f
+            emit(GenerationStep(
+                title = "Синтез файла (${index + 1}/$totalFiles)",
+                detail = "Генерация $filePath…",
+                progress = fileProgress
+            ))
 
-        emit(GenerationStep("Этап 10/10: Проект сохранён", "Исходные файлы готовы в рабочей области IDE.", 1.0f))
-        isGenerating = false
-    }
+            val filePrompt = """<|im_start|>system
+Ты — старший Kotlin Android-инженер. Напиши полный, компилируемый исходный код для файла `$filePath`.
+Требования:
+- Пакет: com.codecore.generated
+- Используй Jetpack Compose (Material 3), Coroutines, Flow
+- Выдавай строго в формате:
+File:$filePath
+```kotlin
+[исходный код]
+```
+Не используй не объявленные зависимости. Код должен собираться без ошибок.<|im_end|>
+<|im_start|>user
+Общее задание: $prompt
+Архитектурный план:
+$planText
 
-    /**
-     * Synthesizes genuine project structure from user prompt.
-     */
-    fun createProjectFromPrompt(prompt: String): CodeCoreProject {
-        val projectName = sanitizeProjectName(prompt)
-        val projectId = UUID.randomUUID().toString()
+Сгенерируй содержимое для файла: $filePath<|im_end|>
+<|im_start|>assistant
+File:$filePath
+```kotlin
+"""
 
-        val mainActivityContent = """package com.codecore.generated
+            val fileRawOutput = StringBuilder("File:$filePath\n```kotlin\n")
+            try {
+                LlamaBridge.generate(
+                    handle = handle,
+                    prompt = filePrompt,
+                    temperature = temperature,
+                    topP = topP,
+                    topK = topK,
+                    repeatPenalty = repeatPenalty,
+                    maxTokens = 1800
+                ) { token ->
+                    if (isCancelled.get()) return@generate false
+                    fileRawOutput.append(token)
+                    true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating file $filePath", e)
+            }
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+            if (isCancelled.get()) {
+                emit(GenerationStep("Генерация отменена", "Операция остановлена пользователем", 0f, isCancelled = true))
+                return@flow
+            }
 
-/**
- * Создано автономным движком CodeCore AI
- * Задание: $prompt
- */
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFF8B5CF6),
-                    background = Color(0xFF0B0A12),
-                    surface = Color(0xFF151321)
-                )
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    AppScreen()
+            val parsed = ProjectFileParser.parseFileBlocks(fileRawOutput.toString())
+            if (parsed.isNotEmpty()) {
+                generatedProjectFiles.addAll(parsed)
+            } else {
+                // In case of cutoff without closing markdown
+                val cleanedCode = fileRawOutput.toString()
+                    .substringAfter("```kotlin\n", "")
+                    .substringAfter("```\n", "")
+                    .substringBeforeLast("```")
+                if (cleanedCode.isNotBlank()) {
+                    generatedProjectFiles.add(
+                        ProjectFile(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = fileName,
+                            path = filePath,
+                            extension = fileName.substringAfterLast(".", ""),
+                            content = cleanedCode
+                        )
+                    )
                 }
             }
         }
-    }
-}
 
-@Composable
-fun AppScreen() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "$projectName",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFF5F3FF)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "Проект успешно сгенерирован локальной моделью. Готов к редактированию и сборке через GitHub Actions.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFFA78BFA)
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = { /* Действие */ },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6))
-        ) {
-            Text("Запустить")
+        // ----------------------------------------------------
+        // Step 3: Final validation & completion
+        // ----------------------------------------------------
+        if (isCancelled.get()) {
+            emit(GenerationStep("Генерация отменена", "Операция остановлена пользователем", 0f, isCancelled = true))
+            return@flow
+        }
+
+        emit(GenerationStep(
+            title = "Этап 3/3: Финализация проекта",
+            detail = "Сгенерировано ${generatedProjectFiles.size} файлов. Объединение с каркасом Gradle…",
+            progress = 1.0f
+        ))
+    }
+
+    /**
+     * Executes real surgical edit on a single file using the active local model or Gemini.
+     */
+    suspend fun performSurgicalEdit(
+        handle: Long,
+        filePath: String,
+        currentContent: String,
+        instruction: String,
+        onToken: (String) -> Boolean
+    ): String = withContext(Dispatchers.Default) {
+        if (handle <= 0L || !LlamaBridge.isNativeReady()) {
+            throw IllegalStateException("Локальная AI-модель не загружена в память")
+        }
+
+        val prompt = """<|im_start|>system
+Ты — инструмент точечного рефакторинга кода Android (Kotlin/Compose).
+Твоя задача — обновить переданный файл согласно инструкции пользователя.
+Верни ПОЛНЫЙ обновлённый исходный код файла без комментариев-заглушек и без сокращений.
+Формат:
+File:$filePath
+```kotlin
+[полный обновлённый код файла]
+```<|im_end|>
+<|im_start|>user
+Файл: $filePath
+Текущий код:
+```
+$currentContent
+```
+
+Инструкция: $instruction<|im_end|>
+<|im_start|>assistant
+File:$filePath
+```kotlin
+"""
+
+        val output = StringBuilder("File:$filePath\n```kotlin\n")
+        LlamaBridge.generate(
+            handle = handle,
+            prompt = prompt,
+            temperature = 0.3f,
+            topP = 0.9f,
+            topK = 40,
+            repeatPenalty = 1.05f,
+            maxTokens = 2500
+        ) { token ->
+            output.append(token)
+            onToken(token)
+        }
+
+        val parsed = ProjectFileParser.parseFileBlocks(output.toString())
+        if (parsed.isNotEmpty()) {
+            parsed.first().content
+        } else {
+            output.toString()
+                .substringAfter("```kotlin\n", "")
+                .substringAfter("```\n", "")
+                .substringBeforeLast("```")
+                .ifBlank { currentContent }
         }
     }
-}"""
 
-        val manifestContent = """<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET" />
-
-    <application
-        android:allowBackup="true"
-        android:label="$projectName"
-        android:theme="@android:style/Theme.Material.NoActionBar">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>"""
-
-        val buildGradleContent = """plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-}
-
-android {
-    namespace = "com.codecore.generated"
-    compileSdk = 36
-
-    defaultConfig {
-        applicationId = "com.codecore.generated"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-    }
-}
-
-dependencies {
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.activity.compose)
-}"""
-
-        val files = listOf(
-            ProjectFile(UUID.randomUUID().toString(), "MainActivity.kt", "src/main/java/com/codecore/generated/MainActivity.kt", "kt", mainActivityContent),
-            ProjectFile(UUID.randomUUID().toString(), "AndroidManifest.xml", "src/main/AndroidManifest.xml", "xml", manifestContent),
-            ProjectFile(UUID.randomUUID().toString(), "build.gradle.kts", "build.gradle.kts", "kts", buildGradleContent)
-        )
-
-        return CodeCoreProject(
-            id = projectId,
-            name = projectName,
-            description = prompt,
-            language = "Kotlin / Compose",
-            files = files
-        )
-    }
-
-    private fun sanitizeProjectName(prompt: String): String {
-        val words = prompt.split(" ", ",", ".", ";").filter { it.isNotBlank() }
-        val name = words.take(3).joinToString("") { word ->
-            word.filter { it.isLetterOrDigit() }.replaceFirstChar { it.uppercase() }
+    private fun extractPlannedFilePaths(planText: String): List<String> {
+        val paths = mutableListOf<String>()
+        for (line in planText.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("File:", ignoreCase = true) || trimmed.startsWith("Файл:", ignoreCase = true)) {
+                val candidate = trimmed.substringAfter(":").substringBefore("-").substringBefore(" ").trim()
+                val sanitized = ProjectFileParser.sanitizePath(candidate)
+                if (ProjectFileParser.isValidRelativePath(sanitized) && sanitized.endsWith(".kt")) {
+                    paths.add(sanitized)
+                }
+            } else if (trimmed.contains(".kt")) {
+                val match = Regex("""[\w/\.\-]+\.kt""").find(trimmed)?.value
+                if (match != null) {
+                    val sanitized = ProjectFileParser.sanitizePath(match)
+                    if (ProjectFileParser.isValidRelativePath(sanitized)) {
+                        paths.add(sanitized)
+                    }
+                }
+            }
         }
-        return if (name.isBlank()) "CodeCoreApp" else name
+        return paths.distinct()
     }
 }

@@ -12,7 +12,7 @@ enum class EngineStatus {
     INSTALLED,          // Файл на диске, но не загружен в RAM
     LOADING_TO_RAM,     // Загрузка весов в RAM
     READY,              // Успешно загружен в RAM и готов к генерации
-    ERROR,              // Ошибка
+    ERROR,              // Ошибка загрузки или выполнения
     LOW_MEMORY          // Недостаточно RAM для загрузки
 }
 
@@ -39,7 +39,8 @@ data class CatalogModel(
     val requiredRamGb: Float,
     val quantization: String,
     val downloadUrl: String,
-    val isRecommended: Boolean = false
+    val isRecommended: Boolean = false,
+    val isCustom: Boolean = false
 )
 
 data class ProjectFile(
@@ -69,4 +70,58 @@ data class DiagnosticItem(
     val detail: String,
     val passed: Boolean,
     val recommendation: String = ""
+)
+
+data class GitHubConfig(
+    val token: String = "",
+    val username: String = "",
+    val defaultBranch: String = "main",
+    val isPrivateRepos: Boolean = true,
+    val lastVerifiedTimestamp: Long = 0,
+    val scopes: List<String> = emptyList()
+)
+
+data class CreatedRepoInfo(
+    val owner: String,
+    val repo: String,
+    val projectId: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class WorkflowRunInfo(
+    val id: Long,
+    val name: String,
+    val status: String,       // queued, in_progress, completed
+    val conclusion: String?,  // success, failure, cancelled, etc.
+    val htmlUrl: String,
+    val headSha: String,
+    val runNumber: Int,
+    val createdAt: String,
+    val jobs: List<WorkflowJobInfo> = emptyList()
+)
+
+data class WorkflowJobInfo(
+    val id: Long,
+    val name: String,
+    val status: String,
+    val conclusion: String?,
+    val stepNames: List<String> = emptyList()
+)
+
+data class ExtractedBuildError(
+    val filePath: String?,
+    val lineNumber: Int?,
+    val errorType: String,
+    val message: String,
+    val rawSnippet: String
+)
+
+data class SelfHealingStep(
+    val iteration: Int,
+    val timestamp: Long,
+    val triggerErrorSummary: String,
+    val filesModified: List<String>,
+    val commitSha: String?,
+    val status: String, // FIXING, COMMITTED, WAITING_BUILD, PASSED, FAILED_REPEATED
+    val failureReason: String? = null
 )

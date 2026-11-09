@@ -2,6 +2,7 @@ package com.codecore.ai.modelmanager
 
 import android.app.ActivityManager
 import android.content.Context
+import android.net.Uri
 import android.os.StatFs
 import android.util.Log
 import com.codecore.ai.localai.LlamaBridge
@@ -16,8 +17,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 
 class ModelManager(private val context: Context) {
     private val TAG = "ModelManager"
@@ -31,27 +33,28 @@ class ModelManager(private val context: Context) {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    // Real curated catalog of coding models from official sources
+    // Real curated catalog of coding & chat models from official HuggingFace repositories
     val catalog: List<CatalogModel> = listOf(
         CatalogModel(
             id = "qwen25_coder_15b",
             name = "Qwen2.5-Coder-1.5B-Instruct",
             developer = "Qwen Team (Alibaba Cloud)",
-            purpose = "Быстрая кодогенерация, алгоритмы, создание функций Kotlin/Java. Минимальный расход батареи.",
-            supportedLanguages = "Kotlin, Java, Python, C++, XML, Gradle",
+            purpose = "Быстрая кодогенерация, архитектура функций Kotlin/Compose. Минимальный расход батареи.",
+            supportedLanguages = "Kotlin, Java, XML, Gradle, Python, C++",
             fileName = "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
             sizeBytes = 986_000_000L,
             formattedSize = "986 МБ",
             requiredRamGb = 1.8f,
             quantization = "GGUF Q4_K_M",
             downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-            isRecommended = false
+            isRecommended = false,
+            isCustom = false
         ),
         CatalogModel(
             id = "qwen25_coder_3b",
             name = "Qwen2.5-Coder-3B-Instruct",
             developer = "Qwen Team (Alibaba Cloud)",
-            purpose = "Основная рекомендованная модель: глубокая архитектура Android-приложений, Jetpack Compose и Gradle.",
+            purpose = "Основная рекомендованная модель: глубокая архитектура Android-приложений, Jetpack Compose и исправление ошибок Gradle.",
             supportedLanguages = "Kotlin, Java, XML, Gradle, C/C++, Python",
             fileName = "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
             sizeBytes = 1_980_000_000L,
@@ -59,7 +62,8 @@ class ModelManager(private val context: Context) {
             requiredRamGb = 3.4f,
             quantization = "GGUF Q4_K_M",
             downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-            isRecommended = true
+            isRecommended = true,
+            isCustom = false
         ),
         CatalogModel(
             id = "deepseek_coder_13b",
@@ -67,29 +71,35 @@ class ModelManager(private val context: Context) {
             developer = "DeepSeek AI",
             purpose = "Специализированная модель для чистой программной логики и исправления синтаксических ошибок.",
             supportedLanguages = "Kotlin, Java, Python, Gradle, C++",
-            fileName = "deepseek-coder-1.3b-instruct-q4_k_m.gguf",
+            fileName = "deepseek-coder-1.3b-instruct.Q4_K_M.gguf",
             sizeBytes = 874_000_000L,
             formattedSize = "874 МБ",
             requiredRamGb = 1.6f,
             quantization = "GGUF Q4_K_M",
             downloadUrl = "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q4_K_M.gguf",
-            isRecommended = false
+            isRecommended = false,
+            isCustom = false
         ),
         CatalogModel(
-            id = "tinyllama_11b",
-            name = "TinyLlama-1.1B-Code-GGUF",
+            id = "tinyllama_11b_chat",
+            name = "TinyLlama-1.1B-Chat-v1.0",
             developer = "TinyLlama Team",
-            purpose = "Сверхкомпактная модель для тестирования и устройств с малым объёмом RAM (от 2 GB).",
-            supportedLanguages = "Kotlin, Java, Python",
-            fileName = "tinyllama-1.1b-code-q4_k_m.gguf",
+            purpose = "Сверхкомпактная базовая чат-модель для тестирования и устройств с малым объёмом RAM.",
+            supportedLanguages = "Текст, базовый код",
+            fileName = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
             sizeBytes = 638_000_000L,
             formattedSize = "638 МБ",
             requiredRamGb = 1.2f,
             quantization = "GGUF Q4_K_M",
             downloadUrl = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-            isRecommended = false
+            isRecommended = false,
+            isCustom = false
         )
     )
+
+    // Dynamic list including custom imported models
+    private val _customModels = MutableStateFlow<List<CatalogModel>>(emptyList())
+    val customModels: StateFlow<List<CatalogModel>> = _customModels.asStateFlow()
 
     // Real state of installed files on disk (map of modelId -> File)
     private val _installedFiles = MutableStateFlow<Map<String, File>>(emptyMap())
@@ -103,6 +113,13 @@ class ModelManager(private val context: Context) {
     private val _activeModel = MutableStateFlow<CatalogModel?>(null)
     val activeModel: StateFlow<CatalogModel?> = _activeModel.asStateFlow()
 
+    // Real native pointer handle
+    private var activeModelHandle: Long = 0L
+
+    // Last engine error message
+    private val _lastEngineError = MutableStateFlow<String?>(null)
+    val lastEngineError: StateFlow<String?> = _lastEngineError.asStateFlow()
+
     // Real download progress map (modelId -> DownloadProgress)
     private val _downloadProgressMap = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val downloadProgressMap: StateFlow<Map<String, DownloadProgress>> = _downloadProgressMap.asStateFlow()
@@ -110,23 +127,51 @@ class ModelManager(private val context: Context) {
     // Active download jobs
     private val downloadJobs = mutableMapOf<String, Job>()
 
-    // Inference parameters
+    // Inference parameters (defaults suited for ~6GB RAM device)
     private val _contextWindow = MutableStateFlow(4096)
     val contextWindow: StateFlow<Int> = _contextWindow.asStateFlow()
 
     private val _cpuThreads = MutableStateFlow(4)
     val cpuThreads: StateFlow<Int> = _cpuThreads.asStateFlow()
 
+    private val _temperature = MutableStateFlow(0.7f)
+    val temperature: StateFlow<Float> = _temperature.asStateFlow()
+
+    private val _topP = MutableStateFlow(0.9f)
+    val topP: StateFlow<Float> = _topP.asStateFlow()
+
+    private val _topK = MutableStateFlow(40)
+    val topK: StateFlow<Int> = _topK.asStateFlow()
+
+    private val _repeatPenalty = MutableStateFlow(1.1f)
+    val repeatPenalty: StateFlow<Float> = _repeatPenalty.asStateFlow()
+
+    private val _maxTokens = MutableStateFlow(2048)
+    val maxTokens: StateFlow<Int> = _maxTokens.asStateFlow()
+
+    private val _needsReload = MutableStateFlow(false)
+    val needsReload: StateFlow<Boolean> = _needsReload.asStateFlow()
+
+    private val _ramWarning = MutableStateFlow<String?>(null)
+    val ramWarning: StateFlow<String?> = _ramWarning.asStateFlow()
+
     init {
         rescanInstalledModels()
     }
 
+    fun getActiveModelHandle(): Long = activeModelHandle
+
+    fun getAllCatalogModels(): List<CatalogModel> {
+        return catalog + _customModels.value
+    }
+
     /**
      * Rescans device storage for real valid GGUF files.
-     * Never mocks or pretends a model is downloaded if the file is absent.
      */
     fun rescanInstalledModels() {
         val found = mutableMapOf<String, File>()
+        val custom = mutableListOf<CatalogModel>()
+
         val filesOnDisk = modelsDir.listFiles { file ->
             file.isFile && (file.extension.equals("gguf", ignoreCase = true) || file.name.endsWith(".gguf"))
         } ?: emptyArray()
@@ -134,29 +179,49 @@ class ModelManager(private val context: Context) {
         for (file in filesOnDisk) {
             val valid = validateGgufHeader(file)
             if (valid) {
-                // Match to catalog or custom
                 val matched = catalog.find { it.fileName.equals(file.name, ignoreCase = true) }
                 if (matched != null) {
                     found[matched.id] = file
                 } else {
-                    found["custom_${file.name}"] = file
+                    val customId = "custom_${file.name.replace(".", "_")}"
+                    found[customId] = file
+                    val sizeBytes = file.length()
+                    val ramRequired = (sizeBytes / (1024f * 1024f * 1024f)) * 1.25f
+                    custom.add(
+                        CatalogModel(
+                            id = customId,
+                            name = file.nameWithoutExtension,
+                            developer = "Пользовательский импорт",
+                            purpose = "Локальный GGUF файл из хранилища устройства",
+                            supportedLanguages = "Код / Текст",
+                            fileName = file.name,
+                            sizeBytes = sizeBytes,
+                            formattedSize = formatBytes(sizeBytes),
+                            requiredRamGb = ramRequired,
+                            quantization = "GGUF",
+                            downloadUrl = "",
+                            isRecommended = false,
+                            isCustom = true
+                        )
+                    )
                 }
             } else {
                 Log.w(TAG, "File ${file.name} is not a valid GGUF binary, ignoring.")
             }
         }
 
+        _customModels.value = custom
         _installedFiles.value = found
 
-        // Update engine status based on reality
         if (_activeModel.value != null) {
             val activeId = _activeModel.value?.id
             if (activeId == null || !found.containsKey(activeId)) {
-                _activeModel.value = null
-                _engineStatus.value = if (found.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
+                unloadActiveModel()
             }
         } else {
-            _engineStatus.value = if (found.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
+            if (_engineStatus.value != EngineStatus.LOADING_TO_RAM && _engineStatus.value != EngineStatus.DOWNLOADING) {
+                _engineStatus.value = if (found.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
+            }
         }
     }
 
@@ -182,57 +247,121 @@ class ModelManager(private val context: Context) {
     }
 
     /**
-     * Real background download of GGUF file with streaming to disk.
+     * Imports a user-selected GGUF file via Storage Access Framework (SAF)
+     */
+    suspend fun importCustomGguf(uri: Uri): Result<CatalogModel> = withContext(Dispatchers.IO) {
+        try {
+            val contentResolver = context.contentResolver
+            var fileName = "imported_model_${System.currentTimeMillis()}.gguf"
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val displayName = cursor.getString(nameIndex)
+                    if (!displayName.isNullOrBlank()) {
+                        fileName = if (displayName.endsWith(".gguf", ignoreCase = true)) displayName else "$displayName.gguf"
+                    }
+                }
+            }
+
+            val targetFile = File(modelsDir, fileName)
+            val tempFile = File(modelsDir, "$fileName.tmp")
+
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw IllegalStateException("Не удалось открыть поток чтения для URI")
+
+            if (!validateGgufHeader(tempFile)) {
+                tempFile.delete()
+                throw IllegalArgumentException("Выбранный файл не является валидным бинарником GGUF (неверная сигнатура заголовка)")
+            }
+
+            if (!tempFile.renameTo(targetFile)) {
+                tempFile.copyTo(targetFile, overwrite = true)
+                tempFile.delete()
+            }
+
+            rescanInstalledModels()
+            val custom = _customModels.value.find { it.fileName == targetFile.name }
+                ?: throw IllegalStateException("Модель импортирована, но не обнаружена при сканировании")
+
+            Result.success(custom)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import custom GGUF", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Real download of GGUF file with HTTP Range support for resume and streaming to disk.
      */
     fun startRealDownload(model: CatalogModel, scope: CoroutineScope) {
         val targetFile = File(modelsDir, model.fileName)
         val tempFile = File(modelsDir, "${model.fileName}.download")
 
-        // Check usable storage space
         val freeSpaceBytes = getAvailableStorageBytes()
         if (freeSpaceBytes < model.sizeBytes + 200_000_000L) {
             _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                 isFailed = true,
-                errorMessage = "Недостаточно свободного места на устройстве. Требуется: ${model.formattedSize}"
+                errorMessage = "Недостаточно свободного места. Требуется: ${model.formattedSize}"
             ))
             return
         }
 
+        val existingDownloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
+
         val job = scope.launch(Dispatchers.IO) {
+            _engineStatus.value = EngineStatus.DOWNLOADING
             _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
-                downloadedBytes = 0,
+                downloadedBytes = existingDownloadedBytes,
                 totalBytes = model.sizeBytes,
-                progressPercent = 0.01f
+                progressPercent = (existingDownloadedBytes.toFloat() / model.sizeBytes).coerceIn(0f, 1f)
             ))
 
             try {
-                val request = Request.Builder()
+                val requestBuilder = Request.Builder()
                     .url(model.downloadUrl)
-                    .header("User-Agent", "CodeCore-AI-Android-Client/0.1")
-                    .build()
+                    .header("User-Agent", "CodeCore-AI-Android/1.0")
+
+                if (existingDownloadedBytes > 0L) {
+                    requestBuilder.header("Range", "bytes=$existingDownloadedBytes-")
+                }
+
+                val request = requestBuilder.build()
 
                 httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
+                    val isPartial = response.code == 206
+                    val isOk = response.code == 200
+
+                    if (!isPartial && !isOk) {
                         throw Exception("HTTP ${response.code}: ${response.message}")
                     }
 
-                    val body = response.body ?: throw Exception("Empty HTTP response body")
-                    val contentLength = if (body.contentLength() > 0) body.contentLength() else model.sizeBytes
-                    var downloaded = 0L
-                    var lastTime = System.currentTimeMillis()
-                    var lastDownloaded = 0L
+                    val body = response.body ?: throw Exception("Пустой ответ от сервера")
+                    val contentLength = body.contentLength()
+                    val totalExpected = if (isPartial) existingDownloadedBytes + contentLength else (if (contentLength > 0) contentLength else model.sizeBytes)
 
-                    body.byteStream().use { input ->
-                        FileOutputStream(tempFile).use { output ->
-                            val buffer = ByteArray(32768)
+                    var downloaded = if (isPartial) existingDownloadedBytes else 0L
+                    var lastTime = System.currentTimeMillis()
+                    var lastDownloaded = downloaded
+
+                    val outputMode = if (isPartial) "rw" else "rws"
+                    RandomAccessFile(tempFile, outputMode).use { raf ->
+                        if (isPartial) {
+                            raf.seek(existingDownloadedBytes)
+                        } else {
+                            raf.setLength(0)
+                        }
+
+                        body.byteStream().use { input ->
+                            val buffer = ByteArray(65536)
                             var read: Int
                             while (input.read(buffer).also { read = it } != -1) {
                                 if (!isActive) {
-                                    // Cancelled
-                                    tempFile.delete()
                                     return@launch
                                 }
-                                output.write(buffer, 0, read)
+                                raf.write(buffer, 0, read)
                                 downloaded += read
 
                                 val now = System.currentTimeMillis()
@@ -240,13 +369,13 @@ class ModelManager(private val context: Context) {
                                     val timeDeltaSec = (now - lastTime) / 1000.0
                                     val bytesDelta = downloaded - lastDownloaded
                                     val speed = if (timeDeltaSec > 0) (bytesDelta / timeDeltaSec).toLong() else 0L
-                                    val remaining = contentLength - downloaded
+                                    val remaining = totalExpected - downloaded
                                     val eta = if (speed > 0) remaining / speed else 0L
 
                                     _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                                         downloadedBytes = downloaded,
-                                        totalBytes = contentLength,
-                                        progressPercent = (downloaded.toFloat() / contentLength).coerceIn(0f, 1f),
+                                        totalBytes = totalExpected,
+                                        progressPercent = (downloaded.toFloat() / totalExpected).coerceIn(0f, 1f),
                                         speedBytesPerSec = speed,
                                         etaSeconds = eta
                                     ))
@@ -254,75 +383,141 @@ class ModelManager(private val context: Context) {
                                     lastDownloaded = downloaded
                                 }
                             }
-                            output.flush()
                         }
                     }
 
-                    // Rename temp to target
+                    if (!validateGgufHeader(tempFile)) {
+                        tempFile.delete()
+                        throw IllegalStateException("Скачанный файл повреждён (заголовок GGUF не прошёл валидацию)")
+                    }
+
+                    if (targetFile.exists()) targetFile.delete()
                     if (tempFile.renameTo(targetFile)) {
-                        // Check header
                         rescanInstalledModels()
                         _downloadProgressMap.value = _downloadProgressMap.value - model.id
+                        _engineStatus.value = EngineStatus.INSTALLED
                     } else {
-                        throw Exception("Не удалось переименовать временный файл загрузки")
+                        throw Exception("Не удалось переименовать файл модели")
                     }
                 }
+            } catch (ce: CancellationException) {
+                Log.i(TAG, "Download job cancelled for ${model.name}")
+                throw ce
             } catch (e: Exception) {
                 Log.e(TAG, "Download error for ${model.name}", e)
-                tempFile.delete()
                 _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                     isFailed = true,
-                    errorMessage = e.localizedMessage ?: "Сетевой сбой при загрузке"
+                    errorMessage = e.localizedMessage ?: "Сбой при загрузке"
                 ))
+                _engineStatus.value = if (_installedFiles.value.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
             }
         }
 
         downloadJobs[model.id] = job
     }
 
+    fun pauseDownload(modelId: String) {
+        downloadJobs[modelId]?.cancel()
+        downloadJobs.remove(modelId)
+        val currentProgress = _downloadProgressMap.value[modelId]
+        if (currentProgress != null) {
+            _downloadProgressMap.value = _downloadProgressMap.value + (modelId to currentProgress.copy(isPaused = true))
+        }
+    }
+
     fun cancelDownload(modelId: String) {
         downloadJobs[modelId]?.cancel()
         downloadJobs.remove(modelId)
         _downloadProgressMap.value = _downloadProgressMap.value - modelId
-        val temp = modelsDir.listFiles { f -> f.name.contains(modelId) && f.name.endsWith(".download") }
-        temp?.forEach { it.delete() }
+
+        val model = getAllCatalogModels().find { it.id == modelId }
+        val fileName = model?.fileName ?: ""
+        if (fileName.isNotEmpty()) {
+            val tempFile = File(modelsDir, "$fileName.download")
+            if (tempFile.exists()) tempFile.delete()
+        }
+
+        _engineStatus.value = if (_installedFiles.value.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
     }
 
     /**
-     * Loads model into RAM after verifying available memory.
+     * Loads model into RAM asynchronously.
+     * Uses honest memory comparison: checks totalMem - margin and threshold without false blocking.
      */
-    fun loadModelIntoRam(model: CatalogModel) {
+    suspend fun loadModelIntoRam(model: CatalogModel) = withContext(Dispatchers.Default) {
         val file = _installedFiles.value[model.id]
         if (file == null || !file.exists()) {
             _engineStatus.value = EngineStatus.NOT_INSTALLED
-            return
+            _lastEngineError.value = "Файл модели отсутствует на диске"
+            return@withContext
         }
 
-        val (availRamGb, _) = getMemoryInfo()
-        if (availRamGb < model.requiredRamGb) {
+        val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        actManager.getMemoryInfo(memInfo)
+
+        val totalGb = memInfo.totalMem / (1024f * 1024f * 1024f)
+        val thresholdGb = memInfo.threshold / (1024f * 1024f * 1024f)
+        val availGb = memInfo.availMem / (1024f * 1024f * 1024f)
+
+        // Usable memory ceiling (total minus threshold and Android OS system margin)
+        val usableCeilingGb = totalGb - thresholdGb - 0.8f
+        if (model.requiredRamGb > usableCeilingGb) {
             _engineStatus.value = EngineStatus.LOW_MEMORY
-            Log.w(TAG, "Insufficient RAM to load ${model.name}. Free: $availRamGb GB, Required: ${model.requiredRamGb} GB")
-            return
+            _lastEngineError.value = "Устройству не хватает ОЗУ: требуется ${model.requiredRamGb} ГБ, доступный предел: %.1f ГБ".format(usableCeilingGb)
+            return@withContext
+        }
+
+        if (availGb < model.requiredRamGb) {
+            _ramWarning.value = "Свободной RAM сейчас: %.1f ГБ. Модель использует mmap и вытеснит фоновый кэш.".format(availGb)
+        } else {
+            _ramWarning.value = null
         }
 
         _engineStatus.value = EngineStatus.LOADING_TO_RAM
-        val handle = LlamaBridge.loadModel(file.absolutePath, _contextWindow.value, _cpuThreads.value)
-        if (handle > 0) {
-            _activeModel.value = model
-            _engineStatus.value = EngineStatus.READY
-            Log.i(TAG, "Model ${model.name} loaded into RAM successfully, handle=$handle")
-        } else {
+        _lastEngineError.value = null
+
+        try {
+            if (activeModelHandle > 0L) {
+                LlamaBridge.freeModel(activeModelHandle)
+                activeModelHandle = 0L
+            }
+
+            val handle = LlamaBridge.loadModel(
+                modelPath = file.absolutePath,
+                contextSize = _contextWindow.value,
+                threads = _cpuThreads.value
+            )
+
+            if (handle > 0L) {
+                activeModelHandle = handle
+                _activeModel.value = model
+                _engineStatus.value = EngineStatus.READY
+                _needsReload.value = false
+                Log.i(TAG, "Model ${model.name} loaded into RAM successfully with handle=$handle")
+            } else {
+                _engineStatus.value = EngineStatus.ERROR
+                _lastEngineError.value = "Нативный движок вернул нулевой дескриптор"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load model into RAM", e)
             _engineStatus.value = EngineStatus.ERROR
+            _lastEngineError.value = e.localizedMessage ?: "Ошибка инициализации native llama.cpp"
         }
     }
 
     /**
-     * Unloads model from RAM and frees memory.
+     * Unloads model from RAM and frees native resources.
      */
     fun unloadActiveModel() {
-        LlamaBridge.freeModel(1001L)
+        if (activeModelHandle > 0L) {
+            LlamaBridge.freeModel(activeModelHandle)
+            activeModelHandle = 0L
+        }
         _activeModel.value = null
         _engineStatus.value = if (_installedFiles.value.isEmpty()) EngineStatus.NOT_INSTALLED else EngineStatus.INSTALLED
+        _needsReload.value = false
+        _ramWarning.value = null
     }
 
     /**
@@ -341,10 +536,36 @@ class ModelManager(private val context: Context) {
 
     fun setContextWindow(size: Int) {
         _contextWindow.value = size
+        if (_activeModel.value != null) {
+            _needsReload.value = true
+        }
     }
 
     fun setCpuThreads(count: Int) {
         _cpuThreads.value = count
+        if (_activeModel.value != null) {
+            _needsReload.value = true
+        }
+    }
+
+    fun setTemperature(temp: Float) {
+        _temperature.value = temp
+    }
+
+    fun setTopP(p: Float) {
+        _topP.value = p
+    }
+
+    fun setTopK(k: Int) {
+        _topK.value = k
+    }
+
+    fun setRepeatPenalty(penalty: Float) {
+        _repeatPenalty.value = penalty
+    }
+
+    fun setMaxTokens(tokens: Int) {
+        _maxTokens.value = tokens
     }
 
     fun getMemoryInfo(): Pair<Float, Float> {
@@ -362,6 +583,14 @@ class ModelManager(private val context: Context) {
             stat.availableBlocksLong * stat.blockSizeLong
         } catch (e: Exception) {
             1_000_000_000L
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return when {
+            bytes >= 1_000_000_000L -> "%.2f ГБ".format(bytes / 1_000_000_000f)
+            bytes >= 1_000_000L -> "%d МБ".format(bytes / 1_000_000L)
+            else -> "%d КБ".format(bytes / 1000L)
         }
     }
 }

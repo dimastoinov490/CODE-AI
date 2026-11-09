@@ -11,3 +11,4 @@ app/build/
 *.keystore
 *.keystore.base64
 public/
+app/src/main/cpp/llama.cpp/
