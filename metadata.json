@@ -1,0 +1,8 @@
+{
+  "name": "CodeCore AI",
+  "description": "Autonomous mobile AI development platform for building Android applications using local GGUF models and cloud intelligence",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

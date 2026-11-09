@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CodeCore AI</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_workspace">Workspace</string>
+    <string name="nav_models">AI Models</string>
+    <string name="nav_learning">Learning</string>
+    <string name="nav_github">GitHub</string>
+    <string name="nav_diagnostics">Diagnostics</string>
+
+    <string name="status_local_ai">Local AI Engine</string>
+    <string name="status_model_loaded">Model Loaded</string>
+    <string name="status_model_none">No Model Loaded</string>
+    <string name="status_github_connected">GitHub Connected</string>
+    <string name="status_github_disconnected">GitHub Offline</string>
+    <string name="status_hybrid_mode">Hybrid Mode</string>
+    <string name="status_offline_mode">Autonomous Offline</string>
+
+    <string name="prompt_placeholder">Describe your Android application or feature to generate with CodeCore AI…</string>
+    <string name="btn_generate">Generate with Local AI</string>
+    <string name="btn_new_project">New Project</string>
+    <string name="recent_projects">Recent Projects</string>
+    <string name="no_projects_yet">No projects created yet. Start by typing a prompt above!</string>
+
+    <string name="title_workspace">Project Workspace</string>
+    <string name="title_models">Model Manager</string>
+    <string name="title_learning">CodeCore Learning</string>
+    <string name="title_github">GitHub &amp; CI/CD</string>
+    <string name="title_diagnostics">Project Diagnostics</string>
+
+    <string name="model_15b_title">CodeCore Light 1.5B (GGUF)</string>
+    <string name="model_3b_title">CodeCore Architect 3B (GGUF)</string>
+    <string name="btn_download">Download GGUF</string>
+    <string name="btn_load_model">Load into RAM</string>
+    <string name="btn_unload_model">Unload Model</string>
+    <string name="btn_delete_model">Delete Model</string>
+    <string name="btn_stop_generation">Stop Generation</string>
+    <string name="btn_resume_generation">Resume Generation</string>
+
+    <string name="gemini_teacher_title">Google Gemini (Cloud Teacher)</string>
+    <string name="github_actions_workflow">GitHub Actions Remote Build</string>
+</resources>
