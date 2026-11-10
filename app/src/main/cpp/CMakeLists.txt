@@ -20,7 +20,7 @@ else()
     include(FetchContent)
     FetchContent_Declare(
         llama
-        GIT_REPOSITORY https://github.com/ggerganov/llama.cpp.git
+        GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
         GIT_TAG        b4100
         GIT_SHALLOW    TRUE
     )

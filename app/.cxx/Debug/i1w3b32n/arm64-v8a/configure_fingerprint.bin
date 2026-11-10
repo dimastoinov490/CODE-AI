@@ -1,47 +1,0 @@
-C/C++ Structured LogN
-L
-J/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/additional_project_files.txtC
-A
-?com.android.build.gradle.internal.cxx.io.EncodedFileFingerPrint	‡úÂ‰œ4ó
- ”Š“‰œ4K
-I
-G/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/android_gradle_build.json	ˆúÂ‰œ4ñ —Š“‰œ4P
-N
-L/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/android_gradle_build_mini.json	ˆúÂ‰œ4À ¬Š“‰œ4=
-;
-9/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/build.ninja	ˆúÂ‰œ4ÖÙ ç‰“‰œ4A
-?
-=/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/build.ninja.txt	ˆúÂ‰œ4F
-D
-B/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/build_file_index.txt	ˆúÂ‰œ4ã ­Š“‰œ4G
-E
-C/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/compile_commands.json	ˆúÂ‰œ4óØ ç‰“‰œ4K
-I
-G/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/compile_commands.json.bin	ˆúÂ‰œ4	‘6 ç‰“‰œ4Q
-O
-M/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/metadata_generation_command.txt	ˆúÂ‰œ4
-ğ ¬Š“‰œ4D
-B
-@/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/prefab_config.json	ˆúÂ‰œ4( ­Š“‰œ4I
-G
-E/app/applet/app/.cxx/Debug/i1w3b32n/arm64-v8a/symbol_folder_index.txt	ˆúÂ‰œ4D ­Š“‰œ4/
--
-+/app/applet/app/src/main/cpp/CMakeLists.txt	ˆúÂ‰œ4å ™”’‰œ49
-7
-5/app/applet/app/src/main/cpp/llama.cpp/CMakeLists.txt	ˆúÂ‰œ4ª5 èœ‚‰œ4A
-?
-=/app/applet/app/src/main/cpp/llama.cpp/cmake/build-info.cmake	ˆúÂ‰œ4Ã êœ‚‰œ4F
-D
-B/app/applet/app/src/main/cpp/llama.cpp/cmake/llama-config.cmake.in	ˆúÂ‰œ4ˆ ìœ‚‰œ4@
->
-</app/applet/app/src/main/cpp/llama.cpp/common/CMakeLists.txt	ˆúÂ‰œ4Ú ìœ‚‰œ4>
-<
-:/app/applet/app/src/main/cpp/llama.cpp/ggml/CMakeLists.txt	ˆúÂ‰œ4ŸS š‚‰œ4B
-@
->/app/applet/app/src/main/cpp/llama.cpp/ggml/src/CMakeLists.txt	ˆúÂ‰œ4ËI ›‚‰œ4K
-I
-G/app/applet/app/src/main/cpp/llama.cpp/ggml/src/ggml-amx/CMakeLists.txt	ˆúÂ‰œ4! œ‚‰œ4K
-I
-G/app/applet/app/src/main/cpp/llama.cpp/ggml/src/ggml-cpu/CMakeLists.txt	ˆúÂ‰œ4çN Ÿ‚‰œ4=
-;
-9/app/applet/app/src/main/cpp/llama.cpp/src/CMakeLists.txt	ˆúÂ‰œ4› ğ‚‰œ4
