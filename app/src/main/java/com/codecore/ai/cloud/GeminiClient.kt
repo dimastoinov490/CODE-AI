@@ -13,10 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * REST client for Google's Gemini Developer API.
- * Model IDs are read from the API rather than assumed to be available for every key.
- */
+/** REST client for Google's Gemini Developer API. */
 class GeminiClient(
     private val apiKeyProvider: () -> String,
     private val modelProvider: () -> String = { "gemini-2.5-flash" },
@@ -24,47 +21,33 @@ class GeminiClient(
 ) {
     private val tag = "GeminiClient"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-    private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/"
-
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .callTimeout(150, TimeUnit.SECONDS)
         .build()
 
-    /** Returns the exact text-generation model IDs visible to this API key. */
+    /** Queries Google for models available to this key that support text generation. */
     suspend fun listModels(): Result<List<String>> = withContext(Dispatchers.IO) {
         val key = apiKeyProvider().trim()
         if (key.isEmpty()) return@withContext Result.failure(IllegalArgumentException("Введите ключ Gemini API."))
-
         try {
             val models = linkedSetOf<String>()
             var pageToken: String? = null
             do {
-                val urlBuilder = (baseUrl + "models").toHttpUrl().newBuilder()
-                    .addQueryParameter("pageSize", "100")
+                val urlBuilder = endpoint("models").newBuilder().addQueryParameter("pageSize", "100")
                 pageToken?.let { urlBuilder.addQueryParameter("pageToken", it) }
-                val request = Request.Builder()
-                    .url(urlBuilder.build())
-                    .header("x-goog-api-key", key)
-                    .header("Accept", "application/json")
-                    .get()
-                    .build()
-
+                val request = Request.Builder().url(urlBuilder.build())
+                    .header("x-goog-api-key", key).header("Accept", "application/json").get().build()
                 httpClient.newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
-                    if (!response.isSuccessful) {
-                        throw apiException(response.code, response.message, body)
-                    }
+                    if (!response.isSuccessful) throw apiException(response.code, response.message, body)
                     val json = JSONObject(body)
                     val entries = json.optJSONArray("models") ?: JSONArray()
                     for (index in 0 until entries.length()) {
                         val model = entries.optJSONObject(index) ?: continue
                         val methods = model.optJSONArray("supportedGenerationMethods") ?: JSONArray()
-                        val supportsGenerateContent = (0 until methods.length()).any {
-                            methods.optString(it) == "generateContent"
-                        }
-                        if (supportsGenerateContent) {
+                        if ((0 until methods.length()).any { methods.optString(it) == "generateContent" }) {
                             val id = model.optString("name").removePrefix("models/")
                             if (id.startsWith("gemini-")) models += id
                         }
@@ -72,7 +55,6 @@ class GeminiClient(
                     pageToken = json.optString("nextPageToken").takeIf { it.isNotBlank() }
                 }
             } while (pageToken != null)
-
             Result.success(models.sorted())
         } catch (e: Exception) {
             Log.w(tag, "Unable to list Gemini models", e)
@@ -80,32 +62,23 @@ class GeminiClient(
         }
     }
 
-    /** Verifies the key against the selected, usable text-generation model. */
+    /** Verifies the key and selected model using Google's model resource endpoint. */
     suspend fun verifyApiKey(): Result<String> = withContext(Dispatchers.IO) {
         val key = apiKeyProvider().trim()
         if (key.isEmpty()) return@withContext Result.failure(IllegalArgumentException("Введите ключ Gemini API."))
         val modelId = normalizeModelId(modelProvider())
             ?: return@withContext Result.failure(IllegalArgumentException("Укажите корректный ID модели Gemini."))
-
         try {
-            val request = Request.Builder()
-                .url(baseUrl + "models/${modelId.encodePathSegment()}")
-                .header("x-goog-api-key", key)
-                .header("Accept", "application/json")
-                .get()
-                .build()
+            val request = Request.Builder().url(modelEndpoint(modelId))
+                .header("x-goog-api-key", key).header("Accept", "application/json").get().build()
             httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) throw apiException(response.code, response.message, body)
-                val model = JSONObject(body)
-                val methods = model.optJSONArray("supportedGenerationMethods") ?: JSONArray()
-                val supportsGenerateContent = (0 until methods.length()).any {
-                    methods.optString(it) == "generateContent"
-                }
-                if (!supportsGenerateContent) {
+                val methods = JSONObject(body).optJSONArray("supportedGenerationMethods") ?: JSONArray()
+                if ((0 until methods.length()).none { methods.optString(it) == "generateContent" }) {
                     throw IllegalStateException("Модель $modelId доступна, но не поддерживает generateContent. Выберите текстовую Gemini-модель.")
                 }
-                Result.success("Ключ принят Google; доступна текстовая модель $modelId.")
+                Result.success("Ключ Gemini API валиден; Google подтвердил доступ к модели $modelId.")
             }
         } catch (e: Exception) {
             Log.w(tag, "Gemini key/model verification failed", e)
@@ -113,7 +86,7 @@ class GeminiClient(
         }
     }
 
-    /** Generates one response (generateContent is a non-streaming endpoint). */
+    /** Calls generateContent; this REST endpoint returns a complete response, not token streaming. */
     suspend fun generateContent(
         systemInstruction: String,
         userPrompt: String,
@@ -121,9 +94,8 @@ class GeminiClient(
         onToken: (String) -> Boolean
     ): Result<String> = withContext(Dispatchers.IO) {
         if (aiModeProvider() == AIMode.LOCAL_ONLY) {
-            return@withContext Result.failure(IllegalStateException("Gemini отключён в автономном режиме. Переключитесь на гибридный или облачный режим."))
+            return@withContext Result.failure(IllegalStateException("Gemini отключён в автономном режиме. Переключитесь на гибридный или обла��ный режим."))
         }
-
         val key = apiKeyProvider().trim()
         if (key.isEmpty()) return@withContext Result.failure(IllegalStateException("Ключ Gemini API не задан."))
         val modelId = normalizeModelId(modelOverride ?: modelProvider())
@@ -131,53 +103,39 @@ class GeminiClient(
         if (userPrompt.isBlank()) return@withContext Result.failure(IllegalArgumentException("Текст запроса Gemini пуст."))
 
         try {
-            val contents = JSONArray().put(
-                JSONObject().put("role", "user")
-                    .put("parts", JSONArray().put(JSONObject().put("text", userPrompt)))
+            val content = JSONObject().put("role", "user").put(
+                "parts", JSONArray().put(JSONObject().put("text", userPrompt))
             )
-            val payload = JSONObject().put("contents", contents)
+            val payload = JSONObject().put("contents", JSONArray().put(content))
             if (systemInstruction.isNotBlank()) {
                 payload.put("systemInstruction", JSONObject().put(
                     "parts", JSONArray().put(JSONObject().put("text", systemInstruction))
                 ))
             }
-            payload.put("generationConfig", JSONObject()
-                .put("temperature", 0.4)
-                .put("maxOutputTokens", 8192))
+            payload.put("generationConfig", JSONObject().put("temperature", 0.4).put("maxOutputTokens", 8192))
 
-            val request = Request.Builder()
-                .url(baseUrl + "models/${modelId.encodePathSegment()}:generateContent")
-                .header("x-goog-api-key", key)
-                .header("Accept", "application/json")
-                .post(payload.toString().toRequestBody(jsonMediaType))
-                .build()
-
+            val request = Request.Builder().url(modelEndpoint(modelId) + ":generateContent")
+                .header("x-goog-api-key", key).header("Accept", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType)).build()
             httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) throw apiException(response.code, response.message, body)
-
                 val json = JSONObject(body)
-                val candidates = json.optJSONArray("candidates")
-                val candidate = candidates?.optJSONObject(0)
+                val candidate = json.optJSONArray("candidates")?.optJSONObject(0)
                 if (candidate == null) {
                     val reason = json.optJSONObject("promptFeedback")?.optString("blockReason")
                         ?.takeIf { !it.isNullOrBlank() }
-                    throw IllegalStateException(
-                        if (reason != null) "Google заблокировал запрос: $reason" else "Google не вернул ответ Gemini."
-                    )
+                    throw IllegalStateException(reason?.let { "Google заблокировал запрос: $it" } ?: "Google не вернул ответ Gemini.")
                 }
-
                 val parts = candidate.optJSONObject("content")?.optJSONArray("parts") ?: JSONArray()
                 val text = buildString {
                     for (index in 0 until parts.length()) {
-                        val part = parts.optJSONObject(index) ?: continue
-                        val partText = part.optString("text")
+                        val partText = parts.optJSONObject(index)?.optString("text").orEmpty()
                         if (partText.isNotBlank()) append(partText)
                     }
                 }.trim()
                 if (text.isEmpty()) {
-                    val finishReason = candidate.optString("finishReason", "не указана")
-                    throw IllegalStateException("Gemini не вернул текстовый ответ (причина завершения: $finishReason). Проверьте, что выбрана текстовая модель.")
+                    throw IllegalStateException("Gemini не вернул текст (finishReason=${candidate.optString("finishReason", "unknown")}). Выберите текстовую Gemini-модель.")
                 }
                 if (!onToken(text)) throw IllegalStateException("Запрос Gemini отменён.")
                 Result.success(text)
@@ -193,19 +151,20 @@ class GeminiClient(
         return id.takeIf { it.startsWith("gemini-") && it.matches(Regex("[A-Za-z0-9._-]+")) }
     }
 
-    private fun String.encodePathSegment(): String =
-        toHttpUrl().newBuilder().addPathSegment(this).build().encodedPath.removePrefix("/")
+    private fun endpoint(path: String) = "https://generativelanguage.googleapis.com/v1beta/".toHttpUrl()
+        .newBuilder().addPathSegments(path).build()
+
+    private fun modelEndpoint(modelId: String) = "https://generativelanguage.googleapis.com/v1beta/".toHttpUrl()
+        .newBuilder().addPathSegment("models").addPathSegment(modelId).build()
 
     private fun apiException(code: Int, status: String, body: String): Exception {
         val googleMessage = try {
             JSONObject(body).optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() }
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
         val explanation = when (code) {
-            400 -> "Google отклонил запрос. Проверьте формат ключа, выбранную модель и параметры запроса."
-            401, 403 -> "Google не принял ключ или у ключа нет доступа к Gemini API. Проверьте ограничения ключа и включённый Generative Language API."
-            404 -> "Модель не найдена или недоступна для этого ключа. Обновите список моделей и выберите ID из ответа Google."
+            400 -> "Google отклонил запрос. Проверьте модель и параметры запроса."
+            401, 403 -> "Google не принял ключ или у него нет доступа к Gemini API. Проверьте ключ и ограничения доступа."
+            404 -> "Модель не найдена или недоступна для этого ключа. Обновите список моделей по ответу Google."
             429 -> "Превышена квота или частота запросов Gemini API."
             else -> "Ошибка Gemini API (HTTP $code $status)."
         }
