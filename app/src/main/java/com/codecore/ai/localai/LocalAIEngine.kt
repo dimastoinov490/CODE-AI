@@ -16,7 +16,8 @@ data class GenerationStep(
     val streamingToken: String? = null,
     val accumulatedText: String? = null,
     val isCancelled: Boolean = false,
-    val isFailed: Boolean = false
+    val isFailed: Boolean = false,
+    val accumulatedFiles: List<ProjectFile>? = null
 )
 
 class LocalAIEngine {
@@ -61,8 +62,11 @@ class LocalAIEngine {
         val planSystemPrompt = """<|im_start|>system
 Ты — автономный senior Android-архитектор. Сформируй список из 2-4 необходимых файлов для реализации приложения на Kotlin и Jetpack Compose (Material 3).
 Пакет приложения: com.codecore.generated.
+Ты можешь планировать файлы исходного кода (.kt), ресурсы (.xml, например strings.xml) и конфигурации.
+Разрешены стандартные зависимости: androidx.compose.material3, lifecycle, navigation-compose, coroutines.
 Перечисли файлы по одному на строку в формате:
 File:app/src/main/java/com/codecore/generated/ИмяФайла.kt - краткое назначение
+File:app/src/main/res/values/strings.xml - строковые ресурсы (опционально)
 Не пиши лишнего текста.<|im_end|>
 <|im_start|>user
 Задание: $prompt<|im_end|>
@@ -115,6 +119,8 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt - кратко
             }
 
             val fileName = filePath.substringAfterLast("/")
+            val isXml = filePath.endsWith(".xml")
+            val codeFence = if (isXml) "xml" else "kotlin"
             val fileProgress = 0.3f + (index.toFloat() / totalFiles) * 0.6f
             emit(GenerationStep(
                 title = "Синтез файла (${index + 1}/$totalFiles)",
@@ -125,14 +131,14 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt - кратко
             val filePrompt = """<|im_start|>system
 Ты — старший Kotlin Android-инженер. Напиши полный, компилируемый исходный код для файла `$filePath`.
 Требования:
-- Пакет: com.codecore.generated
+- Пакет (для Kotlin): com.codecore.generated
 - Используй Jetpack Compose (Material 3), Coroutines, Flow
 - Выдавай строго в формате:
 File:$filePath
-```kotlin
+```$codeFence
 [исходный код]
 ```
-Не используй не объявленные зависимости. Код должен собираться без ошибок.<|im_end|>
+Разрешены только стандартные зависимости Compose/AndroidX. Код должен собираться без ошибок.<|im_end|>
 <|im_start|>user
 Общее задание: $prompt
 Архитектурный план:
@@ -141,10 +147,10 @@ $planText
 Сгенерируй содержимое для файла: $filePath<|im_end|>
 <|im_start|>assistant
 File:$filePath
-```kotlin
+```$codeFence
 """
 
-            val fileRawOutput = StringBuilder("File:$filePath\n```kotlin\n")
+            val fileRawOutput = StringBuilder("File:$filePath\n```$codeFence\n")
             try {
                 LlamaBridge.generate(
                     handle = handle,
@@ -202,7 +208,8 @@ File:$filePath
         emit(GenerationStep(
             title = "Этап 3/3: Финализация проекта",
             detail = "Сгенерировано ${generatedProjectFiles.size} файлов. Объединение с каркасом Gradle…",
-            progress = 1.0f
+            progress = 1.0f,
+            accumulatedFiles = generatedProjectFiles
         ))
     }
 
@@ -275,11 +282,11 @@ File:$filePath
             if (trimmed.startsWith("File:", ignoreCase = true) || trimmed.startsWith("Файл:", ignoreCase = true)) {
                 val candidate = trimmed.substringAfter(":").substringBefore("-").substringBefore(" ").trim()
                 val sanitized = ProjectFileParser.sanitizePath(candidate)
-                if (ProjectFileParser.isValidRelativePath(sanitized) && sanitized.endsWith(".kt")) {
+                if (ProjectFileParser.isValidRelativePath(sanitized) && (sanitized.endsWith(".kt") || sanitized.endsWith(".xml") || sanitized.endsWith(".kts"))) {
                     paths.add(sanitized)
                 }
-            } else if (trimmed.contains(".kt")) {
-                val match = Regex("""[\w/\.\-]+\.kt""").find(trimmed)?.value
+            } else if (trimmed.contains(".kt") || trimmed.contains(".xml")) {
+                val match = Regex("""[\w/\.\-]+\.(kt|xml|kts)""").find(trimmed)?.value
                 if (match != null) {
                     val sanitized = ProjectFileParser.sanitizePath(match)
                     if (ProjectFileParser.isValidRelativePath(sanitized)) {

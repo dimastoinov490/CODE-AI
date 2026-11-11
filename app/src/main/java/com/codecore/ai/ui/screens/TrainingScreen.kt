@@ -28,8 +28,8 @@ fun TrainingScreen(datasetManager: DatasetManager) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var pairCount by remember { mutableIntStateOf(datasetManager.getPairCount()) }
-    var fileSizeFormatted by remember { mutableStateOf(datasetManager.getFileSizeFormatted()) }
+    val pairCount by datasetManager.pairCount.collectAsState()
+    val fileSizeFormatted by datasetManager.fileSizeFormatted.collectAsState()
     var exportStatusText by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(

@@ -44,6 +44,19 @@ class DiagnosticsManager(
             )
         )
 
+        // Native System Info (CPU / SIMD instructions)
+        val sysInfo = LlamaBridge.getSystemInfo()
+        list.add(
+            DiagnosticItem(
+                id = "native_cpu_simd",
+                category = "Аппаратные инструкции CPU",
+                title = "Поддержка SIMD / llama.cpp System Info",
+                detail = sysInfo,
+                passed = isNativeLoaded && !sysInfo.startsWith("Error") && !sysInfo.startsWith("Native library not loaded"),
+                recommendation = if (!isNativeLoaded) "Требуется поддержка ARM64-v8a (NEON / DotProd / FP16)" else ""
+            )
+        )
+
         // 2. RAM and Storage check
         val (availRam, totalRam) = modelManager.getMemoryInfo()
         val availStorageBytes = modelManager.getAvailableStorageBytes()

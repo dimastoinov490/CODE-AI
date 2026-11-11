@@ -38,14 +38,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val datasetManager = DatasetManager(application)
 
     val gitHubClient = GitHubClient(application)
-    val geminiClient = GeminiClient { secureStorage.getGeminiApiKey() }
+    val geminiClient = GeminiClient(
+        apiKeyProvider = { secureStorage.getGeminiApiKey() },
+        modelProvider = { secureStorage.getGeminiModel() }
+    )
 
     val selfHealingEngine = SelfHealingEngine(
         context = application,
         gitHubClient = gitHubClient,
         projectRepository = projectRepository,
         localAIEngine = localAIEngine,
-        geminiClient = geminiClient
+        geminiClient = geminiClient,
+        datasetManager = datasetManager
     )
 
     val diagnosticsManager = DiagnosticsManager(
@@ -94,8 +98,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _geminiApiKey = MutableStateFlow(secureStorage.getGeminiApiKey())
     val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
 
+    private val _geminiModel = MutableStateFlow(secureStorage.getGeminiModel())
+    val geminiModel: StateFlow<String> = _geminiModel.asStateFlow()
+
     private val _geminiCheckMessage = MutableStateFlow<String?>(null)
     val geminiCheckMessage: StateFlow<String?> = _geminiCheckMessage.asStateFlow()
+
+    fun updateGeminiModel(model: String) {
+        _geminiModel.value = model
+        secureStorage.saveGeminiModel(model)
+    }
 
     // UI Snackbars
     private val _userMessage = MutableStateFlow<String?>(null)
@@ -199,6 +211,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repeatPenalty = modelManager.repeatPenalty.value
         ).collect { step ->
             _currentGenerationStep.value = step
+            if (step.accumulatedFiles != null) {
+                generatedFilesCollector.addAll(step.accumulatedFiles)
+            }
             if (step.isCancelled) {
                 isCancelled = true
             }
@@ -209,14 +224,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // Synthesize project on disk
-        val sanitizedName = prompt.split(" ", ",", ".").filter { it.isNotBlank() }.take(3)
-            .joinToString("") { it.replaceFirstChar { c -> c.uppercase() } }
-            .filter { it.isLetterOrDigit() }
-            .ifBlank { "AutonomousApp" }
+        // Dynamically derive project name and package from prompt
+        val projectName = com.codecore.ai.project.ProjectNameGenerator.generateProjectName(prompt)
 
         val created = projectRepository.createProject(
-            name = sanitizedName,
+            name = projectName,
             description = prompt,
             generatedFiles = generatedFilesCollector
         )
@@ -252,13 +264,10 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         _currentGenerationStep.value = GenerationStep("Обработка файлов", "Парсинг сгенерированных блоков кода…", 0.8f)
         val files = com.codecore.ai.project.ProjectFileParser.parseFileBlocks(responseText)
 
-        val sanitizedName = prompt.split(" ", ",", ".").filter { it.isNotBlank() }.take(3)
-            .joinToString("") { it.replaceFirstChar { c -> c.uppercase() } }
-            .filter { it.isLetterOrDigit() }
-            .ifBlank { "CloudApp" }
+        val projectName = com.codecore.ai.project.ProjectNameGenerator.generateProjectName(prompt)
 
         val created = projectRepository.createProject(
-            name = sanitizedName,
+            name = projectName,
             description = prompt,
             generatedFiles = files
         )

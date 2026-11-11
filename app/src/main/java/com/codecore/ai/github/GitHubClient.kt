@@ -182,6 +182,31 @@ class GitHubClient(private val context: Context) {
     }
 
     /**
+     * Determines default branch of repository via GET /repos/{owner}/{repo}.
+     */
+    suspend fun getDefaultBranch(token: String, owner: String, repo: String): String = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url("https://api.github.com/repos/$owner/$repo")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .build()
+
+            httpClient.newCall(req).execute().use { response ->
+                if (response.isSuccessful) {
+                    val json = JSONObject(response.body?.string() ?: "{}")
+                    json.optString("default_branch", "main").ifBlank { "main" }
+                } else {
+                    "main"
+                }
+            }
+        } catch (e: Exception) {
+            "main"
+        }
+    }
+
+    /**
      * Pushes all project files into created repo in a single commit using Git Data API.
      */
     suspend fun pushProjectFiles(
@@ -194,8 +219,9 @@ class GitHubClient(private val context: Context) {
         try {
             assertRepoSafe(owner, repo)
 
-            // 1. Get HEAD reference
-            val refUrl = "https://api.github.com/repos/$owner/$repo/git/refs/heads/main"
+            // 1. Get default branch and HEAD reference
+            val defaultBranch = getDefaultBranch(token, owner, repo)
+            val refUrl = "https://api.github.com/repos/$owner/$repo/git/refs/heads/$defaultBranch"
             val refReq = Request.Builder()
                 .url(refUrl)
                 .header("Authorization", "Bearer $token")
@@ -205,7 +231,7 @@ class GitHubClient(private val context: Context) {
             var parentCommitSha: String
             httpClient.newCall(refReq).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw Exception("Не удалось получить main ref (HTTP ${response.code}): ${response.body?.string() ?: response.message}")
+                    throw Exception("Не удалось получить $defaultBranch ref (HTTP ${response.code}): ${response.body?.string() ?: response.message}")
                 }
                 val json = JSONObject(response.body?.string() ?: "{}")
                 parentCommitSha = json.getJSONObject("object").getString("sha")

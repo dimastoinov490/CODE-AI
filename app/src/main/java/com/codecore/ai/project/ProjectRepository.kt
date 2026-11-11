@@ -126,7 +126,8 @@ class ProjectRepository(private val context: Context) {
     fun createProject(
         name: String,
         description: String,
-        generatedFiles: List<ProjectFile>
+        generatedFiles: List<ProjectFile>,
+        customApplicationId: String? = null
     ): CodeCoreProject {
         val projectId = UUID.randomUUID().toString()
         val projectDir = File(projectsDir, projectId).apply { mkdirs() }
@@ -134,17 +135,38 @@ class ProjectRepository(private val context: Context) {
         // 1. Copy base template scaffold from assets
         copyTemplateScaffold(projectDir)
 
-        // 2. Write or overwrite generated application files
+        // 2. Customize unique applicationId and app name
+        val appId = customApplicationId ?: ProjectNameGenerator.generateUniqueApplicationId(name)
+        val buildGradle = File(projectDir, "app/build.gradle.kts")
+        if (buildGradle.exists()) {
+            val updatedBuild = buildGradle.readText().replace(
+                "applicationId = \"com.codecore.generated\"",
+                "applicationId = \"$appId\""
+            )
+            buildGradle.writeText(updatedBuild)
+        }
+
+        val stringsXml = File(projectDir, "app/src/main/res/values/strings.xml")
+        if (stringsXml.exists()) {
+            val updatedStrings = stringsXml.readText().replace(
+                "<string name=\"app_name\">CodeCore Generated</string>",
+                "<string name=\"app_name\">$name</string>"
+            )
+            stringsXml.writeText(updatedStrings)
+        }
+
+        // 3. Write or overwrite generated application files
         for (file in generatedFiles) {
             val targetFile = File(projectDir, file.path)
             targetFile.parentFile?.mkdirs()
             targetFile.writeText(file.content)
         }
 
-        // 3. Write metadata
+        // 4. Write metadata
         val meta = JSONObject().apply {
             put("id", projectId)
             put("name", name)
+            put("applicationId", appId)
             put("description", description)
             put("language", "Kotlin / Compose")
             put("createdTimestamp", System.currentTimeMillis())
@@ -180,8 +202,9 @@ class ProjectRepository(private val context: Context) {
     private fun copyAssetFolder(assetManager: android.content.res.AssetManager, assetPath: String, targetDir: File) {
         val files = assetManager.list(assetPath) ?: return
         if (files.isEmpty()) {
-            // It's a file
-            val targetFile = File(targetDir, assetPath.removePrefix("project_template/"))
+            val rawRel = assetPath.removePrefix("project_template/").removePrefix("project_template")
+            val targetRel = mapTemplateAssetPath(rawRel)
+            val targetFile = File(targetDir, targetRel)
             targetFile.parentFile?.mkdirs()
             assetManager.open(assetPath).use { input ->
                 FileOutputStream(targetFile).use { output ->
@@ -198,8 +221,9 @@ class ProjectRepository(private val context: Context) {
                 if (subFiles != null && subFiles.isNotEmpty()) {
                     copyAssetFolder(assetManager, subAssetPath, targetDir)
                 } else {
-                    val rel = subAssetPath.removePrefix("project_template/")
-                    val targetFile = File(targetDir, rel)
+                    val rawRel = subAssetPath.removePrefix("project_template/").removePrefix("project_template")
+                    val targetRel = mapTemplateAssetPath(rawRel)
+                    val targetFile = File(targetDir, targetRel)
                     targetFile.parentFile?.mkdirs()
                     try {
                         assetManager.open(subAssetPath).use { input ->
@@ -211,11 +235,19 @@ class ProjectRepository(private val context: Context) {
                             targetFile.setExecutable(true, false)
                         }
                     } catch (e: Exception) {
-                        // Might be empty directory
                         targetFile.mkdirs()
                     }
                 }
             }
+        }
+    }
+
+    private fun mapTemplateAssetPath(path: String): String {
+        return when {
+            path.startsWith("github_workflows/") -> ".github/workflows/" + path.removePrefix("github_workflows/")
+            path == "github_workflows" -> ".github/workflows"
+            path == "gitignore.txt" -> ".gitignore"
+            else -> path
         }
     }
 

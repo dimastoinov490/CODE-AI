@@ -177,6 +177,15 @@ fun WorkspaceScreen(
                     }
                 }
                 IconButton(
+                    onClick = {
+                        viewModel.projectRepository.duplicateProject(project.id)
+                        viewModel.showMessage("Проект '${project.name}' дублирован")
+                    },
+                    modifier = Modifier.size(34.dp).background(SurfaceElevated, CircleShape).testTag("duplicate_active_project")
+                ) {
+                    Icon(Icons.Default.AddCircle, contentDescription = "Дублировать проект", tint = StatusCyan, modifier = Modifier.size(16.dp))
+                }
+                IconButton(
                     onClick = { exportZipLauncher.launch("${project.name}.zip") },
                     modifier = Modifier.size(34.dp).background(SurfaceElevated, CircleShape)
                 ) {

@@ -93,4 +93,7 @@ class SecureStorage(context: Context) {
 
     fun getGeminiApiKey(): String = decryptAndGet("gemini_key")
     fun saveGeminiApiKey(key: String) = encryptAndSave("gemini_key", key)
+
+    fun getGeminiModel(): String = prefs.getString("gemini_model", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+    fun saveGeminiModel(model: String) = prefs.edit().putString("gemini_model", model).apply()
 }

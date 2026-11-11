@@ -26,6 +26,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags("-O3")
+                arguments("-DCMAKE_BUILD_TYPE=Release")
             }
         }
     }

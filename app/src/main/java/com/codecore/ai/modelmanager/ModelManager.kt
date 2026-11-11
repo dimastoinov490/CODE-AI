@@ -312,6 +312,7 @@ class ModelManager(private val context: Context) {
         val existingDownloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
 
         val job = scope.launch(Dispatchers.IO) {
+            ModelDownloadService.start(context, model.name)
             _engineStatus.value = EngineStatus.DOWNLOADING
             _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                 downloadedBytes = existingDownloadedBytes,
@@ -359,6 +360,7 @@ class ModelManager(private val context: Context) {
                             var read: Int
                             while (input.read(buffer).also { read = it } != -1) {
                                 if (!isActive) {
+                                    ModelDownloadService.stop(context)
                                     return@launch
                                 }
                                 raf.write(buffer, 0, read)
@@ -371,14 +373,16 @@ class ModelManager(private val context: Context) {
                                     val speed = if (timeDeltaSec > 0) (bytesDelta / timeDeltaSec).toLong() else 0L
                                     val remaining = totalExpected - downloaded
                                     val eta = if (speed > 0) remaining / speed else 0L
+                                    val progressPercent = (downloaded.toFloat() / totalExpected).coerceIn(0f, 1f)
 
                                     _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                                         downloadedBytes = downloaded,
                                         totalBytes = totalExpected,
-                                        progressPercent = (downloaded.toFloat() / totalExpected).coerceIn(0f, 1f),
+                                        progressPercent = progressPercent,
                                         speedBytesPerSec = speed,
                                         etaSeconds = eta
                                     ))
+                                    ModelDownloadService.updateProgress(context, model.name, (progressPercent * 100).toInt())
                                     lastTime = now
                                     lastDownloaded = downloaded
                                 }
@@ -396,15 +400,18 @@ class ModelManager(private val context: Context) {
                         rescanInstalledModels()
                         _downloadProgressMap.value = _downloadProgressMap.value - model.id
                         _engineStatus.value = EngineStatus.INSTALLED
+                        ModelDownloadService.stop(context)
                     } else {
                         throw Exception("Не удалось переименовать файл модели")
                     }
                 }
             } catch (ce: CancellationException) {
                 Log.i(TAG, "Download job cancelled for ${model.name}")
+                ModelDownloadService.stop(context)
                 throw ce
             } catch (e: Exception) {
                 Log.e(TAG, "Download error for ${model.name}", e)
+                ModelDownloadService.stop(context)
                 _downloadProgressMap.value = _downloadProgressMap.value + (model.id to DownloadProgress(
                     isFailed = true,
                     errorMessage = e.localizedMessage ?: "Сбой при загрузке"
@@ -419,6 +426,7 @@ class ModelManager(private val context: Context) {
     fun pauseDownload(modelId: String) {
         downloadJobs[modelId]?.cancel()
         downloadJobs.remove(modelId)
+        ModelDownloadService.stop(context)
         val currentProgress = _downloadProgressMap.value[modelId]
         if (currentProgress != null) {
             _downloadProgressMap.value = _downloadProgressMap.value + (modelId to currentProgress.copy(isPaused = true))
@@ -428,6 +436,7 @@ class ModelManager(private val context: Context) {
     fun cancelDownload(modelId: String) {
         downloadJobs[modelId]?.cancel()
         downloadJobs.remove(modelId)
+        ModelDownloadService.stop(context)
         _downloadProgressMap.value = _downloadProgressMap.value - modelId
 
         val model = getAllCatalogModels().find { it.id == modelId }

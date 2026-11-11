@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -341,8 +342,19 @@ fun DashboardScreen(
                                 fontSize = 10.sp
                             )
                         }
-                        IconButton(onClick = { onOpenProject(project) }) {
-                            Icon(Icons.Default.ArrowForward, contentDescription = "Открыть", tint = Lavender)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    viewModel.projectRepository.duplicateProject(project.id)
+                                    viewModel.showMessage("Проект дублирован")
+                                },
+                                modifier = Modifier.testTag("duplicate_project_${project.id}")
+                            ) {
+                                Icon(Icons.Default.AddCircle, contentDescription = "Дублировать", tint = Lavender, modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { onOpenProject(project) }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Открыть", tint = Lavender)
+                            }
                         }
                     }
                 }

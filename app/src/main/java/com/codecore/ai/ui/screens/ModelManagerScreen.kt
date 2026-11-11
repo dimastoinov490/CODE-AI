@@ -49,7 +49,25 @@ fun ModelManagerScreen(modelManager: ModelManager) {
     val ramWarning by modelManager.ramWarning.collectAsState()
     val lastEngineError by modelManager.lastEngineError.collectAsState()
 
+    val context = LocalContext.current
     val (availRam, totalRam) = remember { modelManager.getMemoryInfo() }
+
+    // POST_NOTIFICATIONS permission for Android 13+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!hasPermission) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     // SAF Import Launcher for custom GGUF files
     val importGgufLauncher = rememberLauncherForActivityResult(
@@ -375,10 +393,38 @@ fun ModelManagerScreen(modelManager: ModelManager) {
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (progress.isPaused) {
+                                    Button(
+                                        onClick = {
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                            modelManager.startRealDownload(model, coroutineScope)
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Продолжить", fontSize = 11.sp)
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { modelManager.pauseDownload(model.id) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusYellow),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Пауза", fontSize = 11.sp)
+                                    }
+                                }
+
                                 OutlinedButton(
                                     onClick = { modelManager.cancelDownload(model.id) },
                                     shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed)
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Text("Отмена", fontSize = 11.sp)
                                 }
@@ -386,7 +432,12 @@ fun ModelManagerScreen(modelManager: ModelManager) {
                         }
                     } else if (!isInstalled && !model.isCustom) {
                         Button(
-                            onClick = { modelManager.startRealDownload(model, coroutineScope) },
+                            onClick = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                modelManager.startRealDownload(model, coroutineScope)
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)

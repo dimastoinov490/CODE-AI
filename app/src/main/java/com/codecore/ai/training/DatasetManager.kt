@@ -3,6 +3,7 @@ package com.codecore.ai.training
 import android.content.Context
 import com.codecore.ai.model.ProjectFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,6 +12,12 @@ import java.io.OutputStream
 
 class DatasetManager(context: Context) {
     private val datasetFile = File(context.filesDir, "dataset_android_codecore.jsonl")
+
+    private val _pairCount = kotlinx.coroutines.flow.MutableStateFlow(getPairCount())
+    val pairCount: kotlinx.coroutines.flow.StateFlow<Int> = _pairCount.asStateFlow()
+
+    private val _fileSizeFormatted = kotlinx.coroutines.flow.MutableStateFlow(getFileSizeFormatted())
+    val fileSizeFormatted: kotlinx.coroutines.flow.StateFlow<String> = _fileSizeFormatted.asStateFlow()
 
     fun getDatasetFile(): File = datasetFile
 
@@ -42,6 +49,8 @@ class DatasetManager(context: Context) {
             put("files", filesArray)
         }
         datasetFile.appendText(record.toString() + "\n")
+        _pairCount.value = getPairCount()
+        _fileSizeFormatted.value = getFileSizeFormatted()
     }
 
     suspend fun exportDataset(outputStream: OutputStream): Boolean = withContext(Dispatchers.IO) {

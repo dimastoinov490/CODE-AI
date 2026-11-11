@@ -11,7 +11,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class GeminiClient(private val apiKeyProvider: () -> String) {
+class GeminiClient(
+    private val apiKeyProvider: () -> String,
+    private val modelProvider: () -> String = { "gemini-2.5-flash" }
+) {
     private val TAG = "GeminiClient"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -21,15 +24,18 @@ class GeminiClient(private val apiKeyProvider: () -> String) {
         .build()
 
     /**
-     * Verifies API key with a minimal token query.
+     * Verifies API key with a minimal models list query using x-goog-api-key header.
      */
     suspend fun verifyApiKey(): Result<String> = withContext(Dispatchers.IO) {
         val key = apiKeyProvider()
         if (key.isBlank()) return@withContext Result.failure(IllegalArgumentException("Ключ Gemini API не задан"))
 
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models?key=$key"
-            val request = Request.Builder().url(url).build()
+            val url = "https://generativelanguage.googleapis.com/v1beta/models"
+            val request = Request.Builder()
+                .url(url)
+                .header("x-goog-api-key", key)
+                .build()
 
             httpClient.newCall(request).execute().use { response ->
                 when (response.code) {
@@ -46,18 +52,21 @@ class GeminiClient(private val apiKeyProvider: () -> String) {
     }
 
     /**
-     * Executes generation with Gemini model (gemini-2.5-flash) and token streaming.
+     * Executes generation with selected Gemini model and token streaming via x-goog-api-key header.
      */
     suspend fun generateContent(
         systemInstruction: String,
         userPrompt: String,
+        modelOverride: String? = null,
         onToken: (String) -> Boolean
     ): Result<String> = withContext(Dispatchers.IO) {
         val key = apiKeyProvider()
         if (key.isBlank()) return@withContext Result.failure(IllegalStateException("Ключ Gemini API отсутствует"))
 
+        val activeModel = (modelOverride ?: modelProvider()).ifBlank { "gemini-2.5-flash" }
+
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$key"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$activeModel:generateContent"
 
             val contentsArray = JSONArray().apply {
                 put(JSONObject().apply {
@@ -81,6 +90,7 @@ class GeminiClient(private val apiKeyProvider: () -> String) {
 
             val request = Request.Builder()
                 .url(url)
+                .header("x-goog-api-key", key)
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
 

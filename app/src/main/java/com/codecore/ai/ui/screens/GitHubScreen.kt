@@ -2,6 +2,7 @@ package com.codecore.ai.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,8 +43,14 @@ fun GitHubScreen(
     val currentStatus by viewModel.selfHealingEngine.currentStatus.collectAsState()
     val healingHistory by viewModel.selfHealingEngine.healingHistory.collectAsState()
     val downloadedApk by viewModel.selfHealingEngine.downloadedApkFile.collectAsState()
+    val lastConsultation by viewModel.selfHealingEngine.lastConsultation.collectAsState()
+
+    val geminiApiKey by viewModel.geminiApiKey.collectAsState()
+    val geminiModel by viewModel.geminiModel.collectAsState()
+    val geminiCheckMessage by viewModel.geminiCheckMessage.collectAsState()
 
     var isTokenVisible by remember { mutableStateOf(false) }
+    var isGeminiKeyVisible by remember { mutableStateOf(false) }
     var commitMessageInput by remember { mutableStateOf("feat: autonomous build trigger from CodeCore AI") }
     var isRunningCycle by remember { mutableStateOf(false) }
 
@@ -173,6 +180,109 @@ fun GitHubScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted,
                         fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        // Настройки Google Gemini Cloud (Task 5)
+        item {
+            GlassCard(borderColor = if (geminiApiKey.isNotBlank()) StatusCyan else BorderSubtle) {
+                Text(
+                    text = "GOOGLE GEMINI CLOUD (ДЛЯ ГИБРИДА И CLOUD РЕЖИМА)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StatusCyan,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = geminiApiKey,
+                    onValueChange = { viewModel.updateGeminiApiKey(it) },
+                    label = { Text("Gemini API Key (AIzaSy...)") },
+                    modifier = Modifier.fillMaxWidth().testTag("gemini_key_input"),
+                    visualTransformation = if (isGeminiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isGeminiKeyVisible = !isGeminiKeyVisible }) {
+                            Icon(
+                                if (isGeminiKeyVisible) Icons.Default.Done else Icons.Default.Lock,
+                                contentDescription = "Показать ключ",
+                                tint = Lavender
+                            )
+                        }
+                    },
+                    textStyle = MaterialTheme.typography.bodySmall.copy(color = TextPrimary),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = StatusCyan,
+                        unfocusedBorderColor = BorderSubtle
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Model Selection (gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash, gemini-1.5-pro)
+                Text(
+                    text = "Выбор модели Gemini:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Lavender,
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val availableGeminiModels = listOf(
+                    "gemini-2.5-flash",
+                    "gemini-2.5-pro",
+                    "gemini-1.5-flash",
+                    "gemini-1.5-pro"
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    availableGeminiModels.forEach { modelOption ->
+                        val isSelected = geminiModel == modelOption
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) PrimaryViolet else SurfaceElevated,
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, StatusCyan) else null,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.updateGeminiModel(modelOption) }
+                                .testTag("select_model_$modelOption")
+                        ) {
+                            Text(
+                                text = modelOption.removePrefix("gemini-"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) TextPrimary else TextMuted,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 2.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Button(
+                    onClick = { viewModel.checkGeminiApiKey() },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("verify_gemini_button")
+                ) {
+                    Text("Проверить ключ Gemini", fontSize = 12.sp)
+                }
+
+                if (geminiCheckMessage != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = geminiCheckMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (geminiCheckMessage!!.contains("валиден")) StatusGreen else StatusRed,
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -323,6 +433,72 @@ fun GitHubScreen(
                             modifier = Modifier.fillMaxWidth().testTag("install_apk_button")
                         ) {
                             Text("Установить app-debug.apk", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Консультация Gemini в гибридном режиме (Task 7)
+        if (lastConsultation != null) {
+            item {
+                GlassCard(borderColor = StatusCyan) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = StatusCyan, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "ОБЛАЧНЫЙ КОНСУЛЬТАНТ (${lastConsultation!!.model})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = StatusCyan,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            NeonBadge(text = "ИТЕРАЦИЯ #${lastConsultation!!.iteration}", dotColor = StatusCyan)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Целевой файл: ${lastConsultation!!.targetFile}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Lavender,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Запрос консультанту:", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                        Surface(
+                            color = SurfaceDark,
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = lastConsultation!!.query,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextPrimary,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(6.dp),
+                                maxLines = 5
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Ответ консультанта:", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                        Surface(
+                            color = SurfaceDark,
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = lastConsultation!!.response,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusGreen,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(6.dp),
+                                maxLines = 6
+                            )
                         }
                     }
                 }

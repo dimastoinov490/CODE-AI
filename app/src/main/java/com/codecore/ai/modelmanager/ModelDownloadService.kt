@@ -10,7 +10,6 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.codecore.ai.R
 
 class ModelDownloadService : Service() {
 
@@ -18,8 +17,38 @@ class ModelDownloadService : Service() {
         const val CHANNEL_ID = "codecore_model_downloads"
         const val NOTIFICATION_ID = 4040
         const val ACTION_START = "ACTION_START_DOWNLOAD"
+        const val ACTION_UPDATE_PROGRESS = "ACTION_UPDATE_PROGRESS"
         const val ACTION_STOP = "ACTION_STOP_DOWNLOAD"
         const val EXTRA_MODEL_NAME = "EXTRA_MODEL_NAME"
+        const val EXTRA_PROGRESS = "EXTRA_PROGRESS"
+
+        fun start(context: Context, modelName: String) {
+            val intent = Intent(context, ModelDownloadService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_MODEL_NAME, modelName)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun updateProgress(context: Context, modelName: String, percent: Int) {
+            val intent = Intent(context, ModelDownloadService::class.java).apply {
+                action = ACTION_UPDATE_PROGRESS
+                putExtra(EXTRA_MODEL_NAME, modelName)
+                putExtra(EXTRA_PROGRESS, percent)
+            }
+            context.startService(intent)
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, ModelDownloadService::class.java).apply {
+                action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
     }
 
     override fun onCreate() {
@@ -36,8 +65,16 @@ class ModelDownloadService : Service() {
         }
 
         val modelName = intent?.getStringExtra(EXTRA_MODEL_NAME) ?: "GGUF Модель"
-        val notification = buildNotification(modelName, 0)
+        val progress = intent?.getIntExtra(EXTRA_PROGRESS, 0) ?: 0
+        val notification = buildNotification(modelName, progress)
 
+        if (action == ACTION_UPDATE_PROGRESS) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, notification)
+            return START_NOT_STICKY
+        }
+
+        // ACTION_START
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -49,12 +86,6 @@ class ModelDownloadService : Service() {
         }
 
         return START_NOT_STICKY
-    }
-
-    fun updateProgress(modelName: String, progressPercent: Int) {
-        val notification = buildNotification(modelName, progressPercent)
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, notification)
     }
 
     private fun buildNotification(modelName: String, progress: Int): Notification {
