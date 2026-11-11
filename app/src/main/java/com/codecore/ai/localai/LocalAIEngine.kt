@@ -29,9 +29,6 @@ class LocalAIEngine {
         isCancelled.set(true)
     }
 
-    /**
-     * Executes real multi-step autonomous Android code generation using llama.cpp via LlamaBridge.
-     */
     fun generateProjectStream(
         handle: Long,
         prompt: String,
@@ -41,28 +38,23 @@ class LocalAIEngine {
         repeatPenalty: Float = 1.1f
     ): Flow<GenerationStep> = flow {
         if (handle <= 0L || !LlamaBridge.isNativeReady()) {
-            emit(
-                GenerationStep(
-                    title = "Ошибка: AI модель не готова",
-                    detail = "Локальная GGUF-модель не загружена в память. Перейдите во вкладку «Модели AI» и загрузите модель.",
-                    progress = 0f,
-                    isFailed = true
-                )
-            )
+            emit(GenerationStep(
+                title = "Ошибка: AI модель не готова",
+                detail = "Локальная GGUF-модель не загружена в память. Перейдите во вкладку «Модели AI» и загрузите модель.",
+                progress = 0f,
+                isFailed = true
+            ))
             return@flow
         }
 
         isCancelled.set(false)
 
-        // ----------------------------------------------------
-        // Step 1: Multi-step agent - Architectural Plan
-        // ----------------------------------------------------
         emit(GenerationStep("Этап 1/3: Архитектурный план", "Анализ задания и построение структуры файлов…", 0.1f))
 
         val planSystemPrompt = """<|im_start|>system
-Ты — автономный senior Android-архитектор. Сформируй список из 2-4 необходимых файлов для реализации приложения на Kotlin и Jetpack Compose (Material 3).
+Ты — автономный senior Android-архитектор. Сформируй список из 2–4 необходимых файлов для реализации приложения.
 Пакет приложения: com.codecore.generated.
-Ты можешь планировать файлы исходного кода (.kt), ресурсы (.xml, например strings.xml) и конфигурации.
+Ты можешь планировать файлы исходного кода (.kt), ресурсы (.xml) и конфигурации.
 Разрешены стандартные зависимости: androidx.compose.material3, lifecycle, navigation-compose, coroutines.
 Перечисли файлы по одному на строку в формате:
 File:app/src/main/java/com/codecore/generated/ИмяФайла.kt - краткое назначение
@@ -104,11 +96,8 @@ File:app/src/main/res/values/strings.xml - строковые ресурсы (о
             "app/src/main/java/com/codecore/generated/ui/AppScreen.kt"
         )
 
-        emit(GenerationStep("Этап 2/3: Генерация файлов", "План сформирован (${filesToGenerate.size} файлов). Начинается синтез кода…", 0.3f))
+        emit(GenerationStep("Этап 2/3: Генерация файлов", "План сформирован (${filesToGenerate.size} файлов). Начинается синтез кода…", 0.5f))
 
-        // ----------------------------------------------------
-        // Step 2: Multi-step agent - File by file synthesis
-        // ----------------------------------------------------
         val generatedProjectFiles = mutableListOf<ProjectFile>()
         val totalFiles = filesToGenerate.size
 
@@ -121,7 +110,7 @@ File:app/src/main/res/values/strings.xml - строковые ресурсы (о
             val fileName = filePath.substringAfterLast("/")
             val isXml = filePath.endsWith(".xml")
             val codeFence = if (isXml) "xml" else "kotlin"
-            val fileProgress = 0.3f + (index.toFloat() / totalFiles) * 0.6f
+            val fileProgress = 0.3f + (index.toFloat() / totalFiles.coerceAtLeast(1)) * 0.6f
             emit(GenerationStep(
                 title = "Синтез файла (${index + 1}/$totalFiles)",
                 detail = "Генерация $filePath…",
@@ -131,7 +120,7 @@ File:app/src/main/res/values/strings.xml - строковые ресурсы (о
             val filePrompt = """<|im_start|>system
 Ты — старший Kotlin Android-инженер. Напиши полный, компилируемый исходный код для файла `$filePath`.
 Требования:
-- Пакет (для Kotlin): com.codecore.generated
+- Пакет: com.codecore.generated
 - Используй Jetpack Compose (Material 3), Coroutines, Flow
 - Выдавай строго в формате:
 File:$filePath
@@ -178,11 +167,12 @@ File:$filePath
             if (parsed.isNotEmpty()) {
                 generatedProjectFiles.addAll(parsed)
             } else {
-                // In case of cutoff without closing markdown
                 val cleanedCode = fileRawOutput.toString()
                     .substringAfter("```kotlin\n", "")
+                    .substringAfter("```xml\n", "")
                     .substringAfter("```\n", "")
                     .substringBeforeLast("```")
+                    .trim()
                 if (cleanedCode.isNotBlank()) {
                     generatedProjectFiles.add(
                         ProjectFile(
@@ -197,11 +187,18 @@ File:$filePath
             }
         }
 
-        // ----------------------------------------------------
-        // Step 3: Final validation & completion
-        // ----------------------------------------------------
         if (isCancelled.get()) {
             emit(GenerationStep("Генерация отменена", "Операция остановлена пользователем", 0f, isCancelled = true))
+            return@flow
+        }
+
+        if (generatedProjectFiles.isEmpty()) {
+            emit(GenerationStep(
+                title = "Ошибка генерации",
+                detail = "Локальная модель не вернула корректный код ни для одного файла.",
+                progress = 0f,
+                isFailed = true
+            ))
             return@flow
         }
 
@@ -213,9 +210,6 @@ File:$filePath
         ))
     }
 
-    /**
-     * Executes real surgical edit on a single file using the active local model or Gemini.
-     */
     suspend fun performSurgicalEdit(
         handle: Long,
         filePath: String,
@@ -230,7 +224,7 @@ File:$filePath
         val prompt = """<|im_start|>system
 Ты — инструмент точечного рефакторинга кода Android (Kotlin/Compose).
 Твоя задача — обновить переданный файл согласно инструкции пользователя.
-Верни ПОЛНЫЙ обновлённый исходный код файла без комментариев-заглушек и без сокращений.
+Верни ПОЛНЫЙ обновлённы�� исходный код файла без комментариев-заглушек и без сокращений.
 Формат:
 File:$filePath
 ```kotlin
@@ -271,6 +265,7 @@ File:$filePath
                 .substringAfter("```kotlin\n", "")
                 .substringAfter("```\n", "")
                 .substringBeforeLast("```")
+                .trim()
                 .ifBlank { currentContent }
         }
     }
@@ -289,9 +284,7 @@ File:$filePath
                 val match = Regex("""[\w/\.\-]+\.(kt|xml|kts)""").find(trimmed)?.value
                 if (match != null) {
                     val sanitized = ProjectFileParser.sanitizePath(match)
-                    if (ProjectFileParser.isValidRelativePath(sanitized)) {
-                        paths.add(sanitized)
-                    }
+                    if (ProjectFileParser.isValidRelativePath(sanitized)) paths.add(sanitized)
                 }
             }
         }
