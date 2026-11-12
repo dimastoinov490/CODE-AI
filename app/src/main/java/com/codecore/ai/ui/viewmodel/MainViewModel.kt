@@ -1,7 +1,6 @@
 package com.codecore.ai.ui.viewmodel
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -25,8 +24,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "MainViewModel"
@@ -40,7 +37,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val gitHubClient = GitHubClient(application)
     val geminiClient = GeminiClient(
         apiKeyProvider = { secureStorage.getGeminiApiKey() },
-        modelProvider = { secureStorage.getGeminiModel() }
+        modelProvider = { secureStorage.getGeminiModel() },
+        aiModeProvider = { _selectedMode.value }
     )
 
     val selfHealingEngine = SelfHealingEngine(
@@ -59,26 +57,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         geminiClient = geminiClient
     )
 
-    // Mode
     private val _selectedMode = MutableStateFlow(AIMode.LOCAL_ONLY)
     val selectedMode: StateFlow<AIMode> = _selectedMode.asStateFlow()
 
-    // Prompt input
     private val _promptInput = MutableStateFlow("")
     val promptInput: StateFlow<String> = _promptInput.asStateFlow()
 
-    // Generation state
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
     private val _currentGenerationStep = MutableStateFlow<GenerationStep?>(null)
     val currentGenerationStep: StateFlow<GenerationStep?> = _currentGenerationStep.asStateFlow()
 
-    // RAM live telemetry
     private val _ramTelemetry = MutableStateFlow(modelManager.getMemoryInfo())
     val ramTelemetry: StateFlow<Pair<Float, Float>> = _ramTelemetry.asStateFlow()
 
-    // GitHub Settings State
     private val _githubToken = MutableStateFlow(secureStorage.getGitHubToken())
     val githubToken: StateFlow<String> = _githubToken.asStateFlow()
 
@@ -94,7 +87,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTokenChecking = MutableStateFlow(false)
     val isTokenChecking: StateFlow<Boolean> = _isTokenChecking.asStateFlow()
 
-    // Gemini Settings State
     private val _geminiApiKey = MutableStateFlow(secureStorage.getGeminiApiKey())
     val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
 
@@ -104,16 +96,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _geminiCheckMessage = MutableStateFlow<String?>(null)
     val geminiCheckMessage: StateFlow<String?> = _geminiCheckMessage.asStateFlow()
 
-    fun updateGeminiModel(model: String) {
-        _geminiModel.value = model
-        secureStorage.saveGeminiModel(model)
-    }
-
-    // UI Snackbars
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
-    // Diagnostics checks
     private val _diagnosticChecks = MutableStateFlow<List<DiagnosticItem>>(emptyList())
     val diagnosticChecks: StateFlow<List<DiagnosticItem>> = _diagnosticChecks.asStateFlow()
 
@@ -121,42 +106,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isCheckingDiagnostics: StateFlow<Boolean> = _isCheckingDiagnostics.asStateFlow()
 
     init {
-        // Periodic RAM telemetry updater (every 3 seconds)
         viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
                 _ramTelemetry.value = modelManager.getMemoryInfo()
                 delay(3000)
             }
         }
-
-        // Check token on startup if present
-        if (_githubToken.value.isNotBlank()) {
-            checkGitHubToken()
-        }
-
-        // Run initial diagnostics
+        if (_githubToken.value.isNotBlank()) checkGitHubToken()
         runDiagnostics()
     }
 
     fun setAIMode(mode: AIMode) {
         _selectedMode.value = mode
+        if (mode == AIMode.CLOUD_ONLY && _geminiApiKey.value.isBlank()) {
+            _geminiCheckMessage.value = "Для облачного режима нужен Gemini API Key."
+        }
     }
 
-    fun setPromptInput(text: String) {
-        _promptInput.value = text
-    }
+    fun setPromptInput(text: String) { _promptInput.value = text }
+    fun clearUserMessage() { _userMessage.value = null }
+    fun showMessage(msg: String) { _userMessage.value = msg }
 
-    fun clearUserMessage() {
-        _userMessage.value = null
-    }
-
-    fun showMessage(msg: String) {
-        _userMessage.value = msg
-    }
-
-    /**
-     * Autonomous project generation from user brief.
-     */
     fun startProjectGeneration(onSuccess: (CodeCoreProject) -> Unit) {
         val prompt = _promptInput.value.trim()
         if (prompt.isBlank()) {
@@ -183,10 +153,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 if (mode == AIMode.CLOUD_ONLY || (mode == AIMode.HYBRID && localHandle <= 0L)) {
-                    // Cloud generation via Gemini
                     generateViaGemini(prompt, onSuccess)
                 } else {
-                    // Local AI generation
                     generateViaLocalModel(localHandle, prompt, onSuccess)
                 }
             } catch (e: Exception) {
@@ -214,9 +182,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (step.accumulatedFiles != null) {
                 generatedFilesCollector.addAll(step.accumulatedFiles)
             }
-            if (step.isCancelled) {
-                isCancelled = true
-            }
+            if (step.isCancelled) isCancelled = true
         }
 
         if (isCancelled) {
@@ -224,9 +190,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // Dynamically derive project name and package from prompt
-        val projectName = com.codecore.ai.project.ProjectNameGenerator.generateProjectName(prompt)
+        if (generatedFilesCollector.isEmpty()) {
+            _isGenerating.value = false
+            _currentGenerationStep.value = GenerationStep("Ошибка генерации", "Локальная модель не вернула файлы проекта.", 0f, isFailed = true)
+            throw IllegalStateException("Локальная модель не вернула файлы проекта. Попробуйте более короткое задание или другой режим.")
+        }
 
+        val projectName = com.codecore.ai.project.ProjectNameGenerator.generateProjectName(prompt)
         val created = projectRepository.createProject(
             name = projectName,
             description = prompt,
@@ -242,7 +212,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun generateViaGemini(prompt: String, onSuccess: (CodeCoreProject) -> Unit) {
         _currentGenerationStep.value = GenerationStep("Генерация через Gemini Cloud", "Отправка запроса в Google AI Studio…", 0.3f)
 
-        val systemPrompt = """Ты — автономный senior Android-разработчик. Создай полнофункциональное приложение на Kotlin + Jetpack Compose (Material 3) по заданию пользователя.
+        val systemPrompt = """Ты — автономный senior Android-разработчик. Создай полнофункциональное приложение на Kotlin + Jetpack Compose.
 Пакет: com.codecore.generated.
 Выдавай каждый файл строго в формате:
 File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
@@ -261,11 +231,17 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
             throw res.exceptionOrNull() ?: Exception("Сбой вызова Gemini API")
         }
 
+        if (responseText.isBlank()) {
+            throw IllegalStateException("Gemini вернул пустой ответ. Проверьте ключ, модель и запрос.")
+        }
+
         _currentGenerationStep.value = GenerationStep("Обработка файлов", "Парсинг сгенерированных блоков кода…", 0.8f)
         val files = com.codecore.ai.project.ProjectFileParser.parseFileBlocks(responseText)
+        if (files.isEmpty()) {
+            throw IllegalStateException("Gemini не сгенерировал корректные файлы проекта. Проверьте формат ответа модели.")
+        }
 
         val projectName = com.codecore.ai.project.ProjectNameGenerator.generateProjectName(prompt)
-
         val created = projectRepository.createProject(
             name = projectName,
             description = prompt,
@@ -284,18 +260,13 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         _currentGenerationStep.value = GenerationStep("Отменено", "Генерация прервана пользователем", 0f, isCancelled = true)
     }
 
-    // Surgical Edit in Workspace
-    suspend fun performSurgicalEdit(
-        filePath: String,
-        currentCode: String,
-        instruction: String
-    ): Result<String> {
+    suspend fun performSurgicalEdit(filePath: String, currentCode: String, instruction: String): Result<String> {
         val mode = _selectedMode.value
         val handle = modelManager.getActiveModelHandle()
 
         return try {
             if (mode == AIMode.CLOUD_ONLY || (mode == AIMode.HYBRID && handle <= 0L)) {
-                val sys = "Ты — эксперт по точечному рефакторингу Android Kotlin. Выдай ПОЛНЫЙ обновлённый файл в блоке File:$filePath\n```kotlin\n...\n```"
+                val sys = "Ты — эксперт по точечному рефакторингу Android Kotlin. Выдай ПОЛНЫЙ обновлённый файл в блоке File:$filePath\n```kotlin\n[полный код]\n```"
                 val usr = "Файл: $filePath\nТекущий код:\n```\n$currentCode\n```\nИнструкция: $instruction"
                 var resp = ""
                 val res = geminiClient.generateContent(sys, usr) { resp += it; true }
@@ -319,7 +290,6 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         }
     }
 
-    // GitHub PAT check
     fun updateGitHubToken(token: String) {
         _githubToken.value = token
         secureStorage.saveGitHubToken(token)
@@ -345,7 +315,6 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
 
                 val hasRepo = scopes.contains("repo")
                 val hasWorkflow = scopes.contains("workflow")
-
                 if (hasRepo && hasWorkflow) {
                     _tokenCheckMessage.value = "Токен валиден (@$login). Права repo и workflow подтверждены."
                 } else {
@@ -357,7 +326,6 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         }
     }
 
-    // Gemini API Key check
     fun updateGeminiApiKey(key: String) {
         _geminiApiKey.value = key
         secureStorage.saveGeminiApiKey(key)
@@ -379,7 +347,6 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         }
     }
 
-    // Diagnostics
     fun runDiagnostics() {
         _isCheckingDiagnostics.value = true
         viewModelScope.launch {
@@ -393,7 +360,6 @@ File:app/src/main/java/com/codecore/generated/ИмяФайла.kt
         }
     }
 
-    // Install APK via FileProvider
     fun installApk(apkFile: File) {
         val context = getApplication<Application>()
         try {
