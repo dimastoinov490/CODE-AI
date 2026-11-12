@@ -4,100 +4,79 @@ import com.codecore.ai.model.ProjectFile
 import java.util.UUID
 
 object ProjectFileParser {
-
     /** Validates relative file paths to protect filesystem integrity. */
     fun isValidRelativePath(path: String): Boolean {
         if (path.isBlank()) return false
-        val normalized = path.replace("\\", "/").trim()
-        if (normalized.isEmpty() || normalized.startsWith("/") || normalized.startsWith("./")) return false
-        val segments = normalized.split("/")
-        if (segments.any { it.isBlank() || it == ".." }) return false
-        return true
+        val normalized = path.replace('\\', '/').trim()
+        if (normalized.isEmpty() || normalized.startsWith('/') || normalized.startsWith("./")) return false
+        return normalized.split('/').none { it.isBlank() || it == ".." }
     }
 
-    /** Sanitizes and normalizes relative path. */
+    /** Normalizes common model-provided prefixes but never makes an unsafe path valid. */
     fun sanitizePath(path: String): String {
-        return path
-            .replace("\\", "/")
-            .trim()
-            .removePrefix("/")
-            .removePrefix("./")
-            .removePrefix("file://")
-            .replace(Regex("^.+?:\\s*"), "")
-            .trim()
+        var normalized = path.trim().replace('\\', '/')
+        if (normalized.startsWith("file://")) normalized = normalized.removePrefix("file://")
+        return normalized
     }
 
-    /** Parses model output containing blocks formatted as File:path/to/File.kt ... */
+    /**
+     * Parses `File:path` blocks containing a complete fenced code block.
+     * Incomplete/truncated fences are discarded so partial AI output is never written as a source file.
+     */
     fun parseFileBlocks(rawText: String): List<ProjectFile> {
+        if (rawText.isBlank()) return emptyList()
         val result = mutableListOf<ProjectFile>()
-        if (rawText.isBlank()) return result
-
-        val lines = rawText.lines()
         var currentPath: String? = null
-        val currentContent = StringBuilder()
+        val content = StringBuilder()
+        var insideFence = false
+        var completedFence = false
 
-        fun finalizeCurrent() {
-            if (currentPath == null) return
-            val contentStr = cleanExtractedContent(currentContent.toString())
-            if (contentStr.isNotBlank()) {
-                val fileName = currentPath!!.substringAfterLast("/")
-                val ext = fileName.substringAfterLast(".", "")
-                if (fileName.isNotBlank()) {
-                    result.add(
-                        ProjectFile(
-                            id = UUID.randomUUID().toString(),
-                            name = fileName,
-                            path = currentPath!!,
-                            extension = ext,
-                            content = contentStr
-                        )
+        fun saveCompletedFile() {
+            val path = currentPath
+            val source = content.toString().trim()
+            if (path != null && completedFence && source.isNotBlank() && isValidRelativePath(path)) {
+                val name = path.substringAfterLast('/')
+                if (name.isNotBlank()) {
+                    result += ProjectFile(
+                        id = UUID.randomUUID().toString(),
+                        name = name,
+                        path = path,
+                        extension = name.substringAfterLast('.', ""),
+                        content = source
                     )
                 }
             }
-            currentPath = null
-            currentContent.setLength(0)
         }
 
-        for (line in lines) {
+        for (line in rawText.lines()) {
             val trimmed = line.trim()
-            val fileHeader = Regex("^(?:File|Файл)\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
-                .find(trimmed)
-
-            if (fileHeader != null) {
-                finalizeCurrent()
-                val rawPath = sanitizePath(fileHeader.groupValues[1])
-                val candidatePath = rawPath.substringBefore(" - ").substringBefore(" ").trim()
-                currentPath = if (candidatePath.isNotBlank() && isValidRelativePath(candidatePath)) {
-                    candidatePath
-                } else {
-                    null
-                }
+            val header = Regex("^(?:File|Файл)\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE).find(trimmed)
+            if (header != null) {
+                saveCompletedFile()
+                val rawPath = sanitizePath(header.groupValues[1])
+                // Optional human-readable suffix is allowed only after whitespace or " - ".
+                val candidate = rawPath.substringBefore(" - ").substringBefore(Regex("\\s+" )).trim()
+                currentPath = candidate.takeIf { isValidRelativePath(it) }
+                content.setLength(0)
+                insideFence = false
+                completedFence = false
                 continue
             }
 
-            if (currentPath != null) {
-                if (trimmed.startsWith("```")) {
-                    continue
+            if (currentPath == null) continue
+            if (trimmed.startsWith("```")) {
+                if (!insideFence && !completedFence) {
+                    insideFence = true
+                } else if (insideFence) {
+                    insideFence = false
+                    completedFence = true
                 }
-                currentContent.append(line).append("\n")
+                continue
             }
+            if (insideFence) content.append(line).append('\n')
         }
 
-        finalizeCurrent()
+        saveCompletedFile()
         return result
-    }
-
-    private fun cleanExtractedContent(raw: String): String {
-        var content = raw.trim()
-        content = content.removePrefix("```")
-        content = content.removeSuffix("```")
-        content = content.trim()
-        if (content.startsWith("kotlin")) {
-            content = content.removePrefix("kotlin").trim()
-        }
-        if (content.startsWith("xml")) {
-            content = content.removePrefix("xml").trim()
-        }
-        return content
     }
 }
