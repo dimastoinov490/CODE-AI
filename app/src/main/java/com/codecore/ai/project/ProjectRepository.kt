@@ -4,14 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.codecore.ai.model.CodeCoreProject
 import com.codecore.ai.model.ProjectFile
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -33,14 +30,8 @@ class ProjectRepository(private val context: Context) {
     private val _activeProject = MutableStateFlow<CodeCoreProject?>(null)
     val activeProject: StateFlow<CodeCoreProject?> = _activeProject.asStateFlow()
 
-    init {
-        loadProjectsFromDisk()
-    }
+    init { loadProjectsFromDisk() }
 
-    /**
-     * Scans filesDir/projects/ and loads all persisted projects.
-     * No hardcoded VideoPlayerPro or CryptoPulse.
-     */
     fun loadProjectsFromDisk() {
         val loaded = mutableListOf<CodeCoreProject>()
         val dirs = projectsDir.listFiles { f -> f.isDirectory } ?: emptyArray()
@@ -59,7 +50,6 @@ class ProjectRepository(private val context: Context) {
 
                     val files = mutableListOf<ProjectFile>()
                     collectProjectFiles(dir, dir, files)
-
                     loaded.add(
                         CodeCoreProject(
                             id = id,
@@ -79,7 +69,6 @@ class ProjectRepository(private val context: Context) {
 
         loaded.sortByDescending { it.lastModifiedTimestamp }
         _projects.value = loaded
-
         if (_activeProject.value == null && loaded.isNotEmpty()) {
             _activeProject.value = loaded.first()
         }
@@ -94,11 +83,7 @@ class ProjectRepository(private val context: Context) {
             } else {
                 val relPath = file.relativeTo(rootDir).path.replace("\\", "/")
                 val ext = file.extension
-                val content = try {
-                    file.readText()
-                } catch (e: Exception) {
-                    ""
-                }
+                val content = try { file.readText() } catch (e: Exception) { "" }
                 list.add(
                     ProjectFile(
                         id = UUID.nameUUIDFromBytes(relPath.toByteArray()).toString(),
@@ -115,27 +100,24 @@ class ProjectRepository(private val context: Context) {
 
     fun selectProject(id: String) {
         val proj = _projects.value.find { it.id == id }
-        if (proj != null) {
-            _activeProject.value = proj
-        }
+        if (proj != null) _activeProject.value = proj
     }
 
-    /**
-     * Initializes project on disk with base scaffold from assets plus custom files.
-     */
     fun createProject(
         name: String,
         description: String,
         generatedFiles: List<ProjectFile>,
         customApplicationId: String? = null
     ): CodeCoreProject {
+        if (generatedFiles.isEmpty()) {
+            throw IllegalArgumentException("Нельзя создать проект без файлов: генерация вернула пустой список.")
+        }
+
         val projectId = UUID.randomUUID().toString()
         val projectDir = File(projectsDir, projectId).apply { mkdirs() }
 
-        // 1. Copy base template scaffold from assets
         copyTemplateScaffold(projectDir)
 
-        // 2. Customize unique applicationId and app name
         val appId = customApplicationId ?: ProjectNameGenerator.generateUniqueApplicationId(name)
         val buildGradle = File(projectDir, "app/build.gradle.kts")
         if (buildGradle.exists()) {
@@ -155,14 +137,16 @@ class ProjectRepository(private val context: Context) {
             stringsXml.writeText(updatedStrings)
         }
 
-        // 3. Write or overwrite generated application files
         for (file in generatedFiles) {
+            if (file.path.isBlank() || !ProjectFileParser.isValidRelativePath(file.path)) {
+                Log.e(TAG, "Skipping invalid generated file path: ${file.path}")
+                continue
+            }
             val targetFile = File(projectDir, file.path)
             targetFile.parentFile?.mkdirs()
             targetFile.writeText(file.content)
         }
 
-        // 4. Write metadata
         val meta = JSONObject().apply {
             put("id", projectId)
             put("name", name)
@@ -207,13 +191,9 @@ class ProjectRepository(private val context: Context) {
             val targetFile = File(targetDir, targetRel)
             targetFile.parentFile?.mkdirs()
             assetManager.open(assetPath).use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
-                }
+                FileOutputStream(targetFile).use { output -> input.copyTo(output) }
             }
-            if (targetFile.name == "gradlew") {
-                targetFile.setExecutable(true, false)
-            }
+            if (targetFile.name == "gradlew") targetFile.setExecutable(true, false)
         } else {
             for (subFile in files) {
                 val subAssetPath = if (assetPath.isEmpty()) subFile else "$assetPath/$subFile"
@@ -227,13 +207,9 @@ class ProjectRepository(private val context: Context) {
                     targetFile.parentFile?.mkdirs()
                     try {
                         assetManager.open(subAssetPath).use { input ->
-                            FileOutputStream(targetFile).use { output ->
-                                input.copyTo(output)
-                            }
+                            FileOutputStream(targetFile).use { output -> input.copyTo(output) }
                         }
-                        if (targetFile.name == "gradlew") {
-                            targetFile.setExecutable(true, false)
-                        }
+                        if (targetFile.name == "gradlew") targetFile.setExecutable(true, false)
                     } catch (e: Exception) {
                         targetFile.mkdirs()
                     }
@@ -242,19 +218,16 @@ class ProjectRepository(private val context: Context) {
         }
     }
 
-    private fun mapTemplateAssetPath(path: String): String {
-        return when {
-            path.startsWith("github_workflows/") -> ".github/workflows/" + path.removePrefix("github_workflows/")
-            path == "github_workflows" -> ".github/workflows"
-            path == "gitignore.txt" -> ".gitignore"
-            else -> path
-        }
+    private fun mapTemplateAssetPath(path: String): String = when {
+        path.startsWith("github_workflows/") -> ".github/workflows/" + path.removePrefix("github_workflows/")
+        path == "github_workflows" -> ".github/workflows"
+        path == "gitignore.txt" -> ".gitignore"
+        else -> path
     }
 
     fun updateFileContent(projectId: String, fileId: String, newContent: String) {
         val project = _projects.value.find { it.id == projectId } ?: return
         val file = project.files.find { it.id == fileId } ?: return
-
         val projDir = File(projectsDir, projectId)
         val diskFile = File(projDir, file.path)
         diskFile.parentFile?.mkdirs()
@@ -264,13 +237,10 @@ class ProjectRepository(private val context: Context) {
             if (it.id == fileId) it.copy(content = newContent, lastModified = System.currentTimeMillis()) else it
         }
         val updatedProject = project.copy(files = updatedFiles, lastModifiedTimestamp = System.currentTimeMillis())
-
         updateProjectMeta(projDir, updatedProject)
 
         _projects.value = _projects.value.map { if (it.id == projectId) updatedProject else it }
-        if (_activeProject.value?.id == projectId) {
-            _activeProject.value = updatedProject
-        }
+        if (_activeProject.value?.id == projectId) _activeProject.value = updatedProject
     }
 
     fun createNewFile(projectId: String, relativePath: String, initialContent: String = "") {
@@ -301,9 +271,7 @@ class ProjectRepository(private val context: Context) {
         updateProjectMeta(projDir, updatedProject)
 
         _projects.value = _projects.value.map { if (it.id == projectId) updatedProject else it }
-        if (_activeProject.value?.id == projectId) {
-            _activeProject.value = updatedProject
-        }
+        if (_activeProject.value?.id == projectId) _activeProject.value = updatedProject
     }
 
     fun renameFile(projectId: String, fileId: String, newPath: String) {
@@ -316,27 +284,20 @@ class ProjectRepository(private val context: Context) {
         val oldFile = File(projDir, file.path)
         val newFile = File(projDir, sanitized)
         newFile.parentFile?.mkdirs()
-
-        if (oldFile.exists()) {
-            oldFile.renameTo(newFile)
-        }
+        if (oldFile.exists()) oldFile.renameTo(newFile)
 
         val updatedFiles = project.files.map {
-            if (it.id == fileId) {
-                it.copy(
-                    name = sanitized.substringAfterLast("/"),
-                    path = sanitized,
-                    extension = sanitized.substringAfterLast(".", "")
-                )
-            } else it
+            if (it.id == fileId) it.copy(
+                name = sanitized.substringAfterLast("/"),
+                path = sanitized,
+                extension = sanitized.substringAfterLast(".", "")
+            ) else it
         }
         val updatedProject = project.copy(files = updatedFiles, lastModifiedTimestamp = System.currentTimeMillis())
         updateProjectMeta(projDir, updatedProject)
 
         _projects.value = _projects.value.map { if (it.id == projectId) updatedProject else it }
-        if (_activeProject.value?.id == projectId) {
-            _activeProject.value = updatedProject
-        }
+        if (_activeProject.value?.id == projectId) _activeProject.value = updatedProject
     }
 
     fun deleteFile(projectId: String, fileId: String) {
@@ -345,31 +306,23 @@ class ProjectRepository(private val context: Context) {
 
         val projDir = File(projectsDir, projectId)
         val diskFile = File(projDir, file.path)
-        if (diskFile.exists()) {
-            diskFile.delete()
-        }
+        if (diskFile.exists()) diskFile.delete()
 
         val updatedFiles = project.files.filter { it.id != fileId }
         val updatedProject = project.copy(files = updatedFiles, lastModifiedTimestamp = System.currentTimeMillis())
         updateProjectMeta(projDir, updatedProject)
 
         _projects.value = _projects.value.map { if (it.id == projectId) updatedProject else it }
-        if (_activeProject.value?.id == projectId) {
-            _activeProject.value = updatedProject
-        }
+        if (_activeProject.value?.id == projectId) _activeProject.value = updatedProject
     }
 
     fun deleteProject(projectId: String) {
         val projDir = File(projectsDir, projectId)
-        if (projDir.exists()) {
-            projDir.deleteRecursively()
-        }
+        if (projDir.exists()) projDir.deleteRecursively()
 
         val remaining = _projects.value.filter { it.id != projectId }
         _projects.value = remaining
-        if (_activeProject.value?.id == projectId) {
-            _activeProject.value = remaining.firstOrNull()
-        }
+        if (_activeProject.value?.id == projectId) _activeProject.value = remaining.firstOrNull()
     }
 
     fun duplicateProject(projectId: String) {
@@ -393,7 +346,6 @@ class ProjectRepository(private val context: Context) {
 
         val files = mutableListOf<ProjectFile>()
         collectProjectFiles(targetDir, targetDir, files)
-
         val dup = project.copy(
             id = newId,
             name = newName,
@@ -416,9 +368,7 @@ class ProjectRepository(private val context: Context) {
                 val relPath = file.relativeTo(projDir).path.replace("\\", "/")
                 val entry = ZipEntry(relPath)
                 zos.putNextEntry(entry)
-                file.inputStream().use { input ->
-                    input.copyTo(zos)
-                }
+                file.inputStream().use { input -> input.copyTo(zos) }
                 zos.closeEntry()
             }
         }
@@ -434,9 +384,7 @@ class ProjectRepository(private val context: Context) {
                 if (!entry.isDirectory && ProjectFileParser.isValidRelativePath(entry.name)) {
                     val targetFile = File(projDir, entry.name)
                     targetFile.parentFile?.mkdirs()
-                    FileOutputStream(targetFile).use { fos ->
-                        zis.copyTo(fos)
-                    }
+                    FileOutputStream(targetFile).use { fos -> zis.copyTo(fos) }
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
