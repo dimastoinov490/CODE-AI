@@ -3,7 +3,6 @@ package com.codecore.ai.github
 import android.content.Context
 import android.util.Log
 import com.codecore.ai.cloud.GeminiClient
-import com.codecore.ai.localai.LlamaBridge
 import com.codecore.ai.localai.LocalAIEngine
 import com.codecore.ai.model.AIMode
 import com.codecore.ai.model.CodeCoreProject
@@ -16,15 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
-
-data class CloudConsultation(
-    val timestamp: Long = System.currentTimeMillis(),
-    val iteration: Int,
-    val query: String,
-    val response: String,
-    val targetFile: String,
-    val model: String = "Google Gemini"
-)
 
 class SelfHealingEngine(
     private val context: Context,
@@ -39,7 +29,7 @@ class SelfHealingEngine(
     private val _healingHistory = MutableStateFlow<List<SelfHealingStep>>(emptyList())
     val healingHistory: StateFlow<List<SelfHealingStep>> = _healingHistory.asStateFlow()
 
-    private val _currentStatus = MutableStateFlow<String>("Ожидание")
+    private val _currentStatus = MutableStateFlow("Ожидание")
     val currentStatus: StateFlow<String> = _currentStatus.asStateFlow()
 
     private val _downloadedApkFile = MutableStateFlow<File?>(null)
@@ -55,9 +45,6 @@ class SelfHealingEngine(
         _currentStatus.value = "Цикл самоисправления остановлен пользователем"
     }
 
-    /**
-     * Executes autonomous CI and self-healing loop.
-     */
     suspend fun runAutonomousCycle(
         token: String,
         owner: String,
@@ -79,7 +66,6 @@ class SelfHealingEngine(
         var consecutiveIdenticalErrors = 0
         var geminiConsultantUsedForCurrentError = false
 
-        // Step 1: Initial Push
         _currentStatus.value = "Отправка кода в GitHub ($owner/$repo)…"
         onStatusUpdate(_currentStatus.value)
 
@@ -90,7 +76,6 @@ class SelfHealingEngine(
             files = project.files,
             commitMessage = commitMessage.ifBlank { "feat: autonomous build trigger" }
         )
-
         if (pushRes.isFailure) {
             val err = "Ошибка отправки в репозиторий: ${pushRes.exceptionOrNull()?.message}"
             _currentStatus.value = err
@@ -99,22 +84,18 @@ class SelfHealingEngine(
 
         var headSha = pushRes.getOrNull()!!
 
-        // Main self-healing loop
         while (currentIteration <= maxIterations) {
-            if (isCancelled) {
-                return Result.failure(Exception("Самоисправление прервано пользователем"))
-            }
+            if (isCancelled) return Result.failure(Exception("Самоисправление прервано пользователем"))
 
             _currentStatus.value = "Итерация $currentIteration/$maxIterations: Ожидание запуска воркфлоу GitHub Actions…"
             onStatusUpdate(_currentStatus.value)
 
-            // Wait for workflow to trigger and finish
             var runCompleted = false
             var runConclusion: String? = null
             var runId: Long = 0L
             var pollAttempts = 0
 
-            while (!runCompleted && pollAttempts < 45) { // up to 7-8 minutes
+            while (!runCompleted && pollAttempts < 45) {
                 if (isCancelled) return Result.failure(Exception("Прервано пользователем"))
                 delay(10000)
                 pollAttempts++
@@ -139,7 +120,6 @@ class SelfHealingEngine(
                 return Result.failure(Exception(err))
             }
 
-            // SUCCESS branch -> Save dataset pair!
             if (runConclusion == "success") {
                 _currentStatus.value = "Сборка успешна! Загрузка готового app-debug.apk…"
                 onStatusUpdate(_currentStatus.value)
@@ -152,8 +132,6 @@ class SelfHealingEngine(
                     onStatusUpdate(_currentStatus.value)
 
                     val refreshedProject = projectRepository.projects.value.find { it.id == project.id } ?: project
-
-                    // Record verified pair in DatasetManager (Task 3)
                     try {
                         datasetManager?.recordVerifiedPair(
                             prompt = project.description.ifBlank { project.name },
@@ -171,21 +149,16 @@ class SelfHealingEngine(
                         commitSha = headSha,
                         status = "PASSED"
                     )
-
                     return Result.success(dlRes.getOrNull()!!)
-                } else {
-                    return Result.failure(dlRes.exceptionOrNull()!!)
                 }
+                return Result.failure(dlRes.exceptionOrNull()!!)
             }
 
-            // FAILURE branch -> Self-Healing
             _currentStatus.value = "Сборка завершилась ошибкой. Загрузка логов и анализ причин…"
             onStatusUpdate(_currentStatus.value)
 
             val jobsRes = gitHubClient.getWorkflowJobs(token, owner, repo, runId)
-            val failedJob = jobsRes.getOrNull()?.find { it.conclusion == "failure" }
-                ?: jobsRes.getOrNull()?.firstOrNull()
-
+            val failedJob = jobsRes.getOrNull()?.find { it.conclusion == "failure" } ?: jobsRes.getOrNull()?.firstOrNull()
             if (failedJob == null) {
                 return Result.failure(Exception("Не удалось найти упавшую задачу в воркфлоу"))
             }
@@ -199,7 +172,6 @@ class SelfHealingEngine(
             val extractedErrors = BuildErrorExtractor.extractErrors(rawLogs)
             val errorSummary = BuildErrorExtractor.formatErrorsForAI(extractedErrors)
 
-            // Loop detection
             if (errorSummary == lastErrorSignature) {
                 consecutiveIdenticalErrors++
                 if (consecutiveIdenticalErrors >= 2 && geminiConsultantUsedForCurrentError) {
@@ -222,31 +194,25 @@ class SelfHealingEngine(
                 geminiConsultantUsedForCurrentError = false
             }
 
-            // Locate problematic file (Task 4: Never default unconditionally to MainActivity.kt)
             val targetRelPath = extractedErrors.firstOrNull { it.filePath != null }?.filePath
             val activeFiles = (projectRepository.projects.value.find { it.id == project.id } ?: project).files
 
             val currentFileObj = if (targetRelPath != null) {
                 activeFiles.find { it.path.endsWith(targetRelPath) || targetRelPath.endsWith(it.name) || it.path == targetRelPath }
             } else {
-                // Find matching file by checking if class/file name appears in extracted errors
                 activeFiles.firstOrNull { file ->
                     val nameWithoutExt = file.name.substringBeforeLast(".")
                     extractedErrors.any { err ->
-                        err.message.contains(nameWithoutExt, ignoreCase = false) ||
-                            err.rawSnippet.contains(file.name)
+                        err.message.contains(nameWithoutExt, ignoreCase = false) || err.rawSnippet.contains(file.name)
                     }
                 } ?: activeFiles.firstOrNull { it.extension == "kt" && !it.name.contains("Theme") }
-                  ?: activeFiles.firstOrNull()
+                    ?: activeFiles.firstOrNull()
             }
 
             if (currentFileObj == null) {
                 return Result.failure(Exception("Проблемный файл (${targetRelPath ?: "не определён"}) не найден в проекте"))
             }
 
-            // Hybrid decision (Task 7):
-            // In HYBRID mode: iteration 1 uses local AI.
-            // If iteration >= 2 or consecutive identical error occurs, Gemini is called as consultant!
             val shouldUseGemini = mode == AIMode.CLOUD_ONLY ||
                 (mode == AIMode.HYBRID && (localModelHandle <= 0L || currentIteration >= 2 || consecutiveIdenticalErrors >= 1))
 
@@ -258,7 +224,6 @@ class SelfHealingEngine(
             }
             onStatusUpdate(_currentStatus.value)
 
-            // Prompt AI to fix error
             val fixedCode = fixFileWithAI(
                 useGemini = shouldUseGemini,
                 currentIteration = currentIteration,
@@ -268,10 +233,23 @@ class SelfHealingEngine(
                 errors = errorSummary
             )
 
-            // Apply fix to repository
+            if (fixedCode.isBlank() || fixedCode == currentFileObj.content) {
+                val failureReason = "AI не изменил содержимое файла ${currentFileObj.path}. Исправление отменено."
+                _currentStatus.value = failureReason
+                _healingHistory.value = _healingHistory.value + SelfHealingStep(
+                    iteration = currentIteration,
+                    timestamp = System.currentTimeMillis(),
+                    triggerErrorSummary = "AI returned unchanged code",
+                    filesModified = listOf(currentFileObj.path),
+                    commitSha = headSha,
+                    status = "FAILED_REPEATED",
+                    failureReason = failureReason
+                )
+                return Result.failure(Exception(failureReason))
+            }
+
             projectRepository.updateFileContent(project.id, currentFileObj.id, fixedCode)
 
-            // Commit and push
             val aiTag = if (shouldUseGemini) "Gemini Consultant" else "Local AI"
             val fixCommitMsg = "fix(self-healing): iteration $currentIteration via $aiTag in ${currentFileObj.name}"
             val refreshedProject = projectRepository.projects.value.find { it.id == project.id } ?: project
@@ -283,13 +261,11 @@ class SelfHealingEngine(
                 files = refreshedProject.files,
                 commitMessage = fixCommitMsg
             )
-
             if (newPushRes.isFailure) {
                 return Result.failure(Exception("Не удалось закоммитить исправление: ${newPushRes.exceptionOrNull()?.message}"))
             }
 
             headSha = newPushRes.getOrNull()!!
-
             _healingHistory.value = _healingHistory.value + SelfHealingStep(
                 iteration = currentIteration,
                 timestamp = System.currentTimeMillis(),
@@ -298,7 +274,6 @@ class SelfHealingEngine(
                 commitSha = headSha,
                 status = "COMMITTED"
             )
-
             currentIteration++
         }
 
@@ -318,8 +293,8 @@ class SelfHealingEngine(
         val instruction = "Исправь ошибки компиляции:\n$errors"
 
         return if (useGemini) {
-            val systemPrompt = "Ты — старший Android-разработчик и облачный консультант CodeCore AI. Исправь переданный файл согласно логам ошибок компиляции. Верни ПОЛНЫЙ исправленный исходный код файла в блоке File:$filePath\n```kotlin\n...\n```."
-            val userPrompt = "Файл: $filePath\nТекущий код:\n```\n$currentContent\n```\nОшибки компиляции:\n$errors\n\nВыдай полный исправленный код файла."
+            val systemPrompt = "Ты — старший Android-разработчик и облачный консультант CodeCore AI. Исправь переданный файл согласно ошибкам компиляции. Выдай ПОЛНЫЙ исправленный файл, без комментариев-заглушек."
+            val userPrompt = "Файл: $filePath\nТекущий код:\n```\n$currentContent\n```\nОшибки компиляции:\n$errors\n\nВыдай полный исправленный файл."
             var response = ""
             val res = geminiClient.generateContent(systemPrompt, userPrompt) { chunk ->
                 response += chunk
@@ -338,7 +313,6 @@ class SelfHealingEngine(
                 currentContent
             }
         } else {
-            // Local AI
             localAIEngine.performSurgicalEdit(
                 handle = localModelHandle,
                 filePath = filePath,
@@ -348,3 +322,12 @@ class SelfHealingEngine(
         }
     }
 }
+
+private data class CloudConsultation(
+    val timestamp: Long = System.currentTimeMillis(),
+    val iteration: Int,
+    val query: String,
+    val response: String,
+    val targetFile: String,
+    val model: String = "Google Gemini"
+)
